@@ -70,6 +70,12 @@ export async function deleteTask(taskId) {
   });
 }
 
+export async function getTaskAudioUrl(taskId) {
+  return api(`/tasks/${encodeURIComponent(taskId)}/audio`, {
+    method: "GET"
+  });
+}
+
 export async function uploadTaskAudio(taskId, blob) {
   const token = getAccessToken();
 
@@ -106,5 +112,6 @@ export const API = {
   snoozeTask,
   doneTask,
   deleteTask,
+  getTaskAudioUrl,
   uploadTaskAudio
 };

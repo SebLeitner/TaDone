@@ -66,7 +66,7 @@ export const UI = {
     }
   },
 
-  openModal(task) {
+  async openModal(task) {
     UI.state.currentTask = task;
     UI.state.audioBlob = null;
     UI.state.recorder = null;
@@ -86,9 +86,16 @@ export const UI = {
     const del = document.getElementById("btnDeleteAudio");
 
     if (task.audioKey) {
-      player.src = `https://${CONFIG.audioBucket}.s3.${CONFIG.cognito.region}.amazonaws.com/${task.audioKey}`;
-      player.classList.remove("d-none");
-      del.classList.remove("d-none");
+      try {
+        const { url } = await API.getTaskAudioUrl(task.taskId);
+        player.src = url;
+        player.classList.remove("d-none");
+        del.classList.remove("d-none");
+      } catch (err) {
+        console.error("Audio URL fetch failed", err);
+        player.classList.add("d-none");
+        del.classList.add("d-none");
+      }
     } else {
       player.classList.add("d-none");
       del.classList.add("d-none");
