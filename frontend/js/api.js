@@ -104,6 +104,12 @@ export async function uploadTaskAudio(taskId, blob) {
   return res.json();
 }
 
+export async function transcribeTaskAudio(taskId) {
+  return api(`/tasks/${encodeURIComponent(taskId)}/transcribe`, {
+    method: "POST"
+  });
+}
+
 
 export const API = {
   fetchTasks,
@@ -113,5 +119,6 @@ export const API = {
   doneTask,
   deleteTask,
   getTaskAudioUrl,
-  uploadTaskAudio
+  uploadTaskAudio,
+  transcribeTaskAudio
 };

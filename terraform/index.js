@@ -16,11 +16,17 @@ const {
   GetObjectCommand
 } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const {
+  TranscribeClient,
+  StartTranscriptionJobCommand,
+  GetTranscriptionJobCommand
+} = require("@aws-sdk/client-transcribe");
 const crypto = require("crypto");
 
 // === CONFIG ===
 const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3 = new S3Client({});
+const transcribe = new TranscribeClient({ region: process.env.REGION });
 
 const TASKS_TABLE = process.env.TASKS_TABLE_NAME;
 const AUDIO_BUCKET = process.env.AUDIO_BUCKET;
@@ -88,6 +94,40 @@ async function autoUnsnooze(userId, tasks) {
 
   if (updates.length > 0) await Promise.all(updates);
   return tasks;
+}
+
+function sanitizeJobName(name) {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 200);
+}
+
+async function waitForTranscription(jobName, timeoutMs = 20000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const { TranscriptionJob } = await transcribe.send(
+      new GetTranscriptionJobCommand({ TranscriptionJobName: jobName })
+    );
+
+    const status = TranscriptionJob?.TranscriptionJobStatus;
+    if (status === "COMPLETED") {
+      const transcriptUrl = TranscriptionJob.Transcript?.TranscriptFileUri;
+      if (!transcriptUrl) throw new Error("Transcript URL missing");
+
+      const res = await fetch(transcriptUrl);
+      const data = await res.json();
+      const text = data?.results?.transcripts?.[0]?.transcript;
+      if (!text) throw new Error("Transcript empty");
+      return text;
+    }
+
+    if (status === "FAILED") {
+      throw new Error(TranscriptionJob?.FailureReason || "Transcription failed");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error("Transcription timeout");
 }
 
 // === MAIN HANDLER ===
@@ -354,6 +394,54 @@ exports.handler = async (event) => {
       );
 
       return json(200, res.Attributes);
+    }
+
+    // =======================
+    // POST /tasks/{id}/transcribe
+    // =======================
+    if (method === "POST" && path.endsWith("/transcribe")) {
+      const taskId = path.split("/")[2];
+
+      const res = await dynamo.send(
+        new GetCommand({
+          TableName: TASKS_TABLE,
+          Key: { userId, taskId }
+        })
+      );
+
+      if (!res.Item) return json(404, { error: "Task not found" });
+      if (!res.Item.audioKey) return json(400, { error: "No audio for task" });
+
+      const mediaUrl = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: AUDIO_BUCKET, Key: res.Item.audioKey }),
+        { expiresIn: 300 }
+      );
+
+      const jobName = sanitizeJobName(`tadone-${userId}-${taskId}-${Date.now()}`);
+
+      await transcribe.send(
+        new StartTranscriptionJobCommand({
+          TranscriptionJobName: jobName,
+          LanguageCode: "de-DE",
+          MediaFormat: "webm",
+          Media: { MediaFileUri: mediaUrl }
+        })
+      );
+
+      const transcript = await waitForTranscription(jobName);
+
+      await dynamo.send(
+        new UpdateCommand({
+          TableName: TASKS_TABLE,
+          Key: { userId, taskId },
+          UpdateExpression: "SET updatedAt = :u",
+          ExpressionAttributeValues: { ":u": new Date().toISOString() },
+          ReturnValues: "ALL_NEW"
+        })
+      );
+
+      return json(200, { transcript });
     }
 
     // Unknown

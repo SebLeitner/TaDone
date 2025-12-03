@@ -233,6 +233,14 @@ resource "aws_iam_role_policy" "lambda_permissions" {
           "s3:DeleteObject"
         ]
         Resource = "${aws_s3_bucket.audio.arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "transcribe:StartTranscriptionJob",
+          "transcribe:GetTranscriptionJob"
+        ]
+        Resource = "*"
       }
     ]
   })
