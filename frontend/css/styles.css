@@ -1,0 +1,33 @@
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.list-group-item {
+  background-color: #1c1f23;
+  border-color: #343a40;
+}
+
+.list-group-item:hover {
+  background-color: #23272b;
+  cursor: pointer;
+}
+
+#btn-add-task {
+  box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.7);
+}
+
+.nav-view-button {
+  text-decoration: none;
+}
+
+.nav-view-button.active {
+  border-bottom: 2px solid currentColor;
+}
+
+.badge.text-bg-warning {
+  color: #000 !important;
+}
+
+.modal-content {
+  box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.8);
+}
