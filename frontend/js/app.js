@@ -8,7 +8,8 @@ import {
   doneTask,
   deleteTask,
   getTaskAudioUrl,
-  uploadTaskAudio
+  uploadTaskAudio,
+  transcribeTaskAudio
 } from "./api.js";
 import { initAudioControls } from "./audio.js";
 
@@ -61,6 +62,7 @@ function initUI() {
   document.getElementById("btn-snooze-task").addEventListener("click", onSnoozeTask);
   document.getElementById("btn-done-task").addEventListener("click", onDoneTask);
   document.getElementById("btn-delete-task").addEventListener("click", onDeleteTask);
+  document.getElementById("btn-audio-transcribe").addEventListener("click", onTranscribeAudio);
 
   // Audio
   initAudioControls({
@@ -212,6 +214,16 @@ function resetTaskModal() {
   document.getElementById("audio-timer").textContent = "00:00";
 }
 
+function ensureTitleWithTimestamp() {
+  const input = document.getElementById("task-title");
+  if (input.value.trim()) return input.value.trim();
+
+  const now = new Date();
+  const fallback = `TS ${now.toLocaleDateString()} ${now.toLocaleTimeString().slice(0, 5)}`;
+  input.value = fallback;
+  return fallback;
+}
+
 function openTaskModalForNew() {
   resetTaskModal();
   document.getElementById("taskModalLabel").textContent = "Neuer Task";
@@ -308,6 +320,67 @@ async function onSaveTask(e) {
   } catch (err) {
     console.error(err);
     alert("Konnte Task nicht speichern.");
+  }
+}
+
+async function onTranscribeAudio() {
+  const transcribeBtn = document.getElementById("btn-audio-transcribe");
+  const statusLabel = document.getElementById("audio-status");
+  const audioPlayer = document.getElementById("audio-player");
+  const descriptionInput = document.getElementById("task-description");
+  const taskIdInput = document.getElementById("task-id");
+
+  const hasAudio = currentAudioBlob || audioPlayer.src;
+  if (!hasAudio) {
+    alert("Keine Audioaufnahme vorhanden.");
+    return;
+  }
+
+  const originalBtnHtml = transcribeBtn.innerHTML;
+  transcribeBtn.disabled = true;
+  transcribeBtn.innerHTML =
+    '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Transkribiere...';
+  statusLabel.textContent = "Audio wird zur Spracherkennung gesendet...";
+
+  try {
+    const title = ensureTitleWithTimestamp();
+    let description = descriptionInput.value.trim();
+    let taskId = taskIdInput.value;
+
+    if (!taskId) {
+      const created = await createTask({ title, description });
+      taskId = created.id || created.taskId;
+      taskIdInput.value = taskId;
+    } else {
+      await updateTask(taskId, { title, description });
+    }
+
+    if (currentAudioBlob) {
+      await uploadTaskAudio(taskId, currentAudioBlob);
+      currentAudioBlob = null;
+    }
+
+    const { transcript } = await transcribeTaskAudio(taskId);
+    if (!transcript) {
+      throw new Error("Keine Transkription erhalten.");
+    }
+
+    const updatedDescription = description
+      ? `${description}\n===> ${transcript} <===`
+      : `===> ${transcript} <===`;
+
+    descriptionInput.value = updatedDescription;
+    await updateTask(taskId, { title: document.getElementById("task-title").value.trim(), description: updatedDescription });
+
+    statusLabel.textContent = "Transkription hinzugefügt.";
+    await loadTasks();
+  } catch (err) {
+    console.error(err);
+    statusLabel.textContent = "Transkription fehlgeschlagen.";
+    alert("Konnte Audio nicht transkribieren: " + err.message);
+  } finally {
+    transcribeBtn.disabled = false;
+    transcribeBtn.innerHTML = originalBtnHtml;
   }
 }
 
