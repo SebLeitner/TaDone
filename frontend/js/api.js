@@ -77,8 +77,6 @@ export async function getTaskAudioUrl(taskId) {
 }
 
 export async function uploadTaskAudio(taskId, blob) {
-  const token = getAccessToken();
-
   // Blob → Base64 konvertieren
   const reader = new FileReader();
   const base64 = await new Promise((resolve, reject) => {
@@ -87,21 +85,11 @@ export async function uploadTaskAudio(taskId, blob) {
     reader.readAsDataURL(blob);
   });
 
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/audio`, {
+  return api(`/tasks/${encodeURIComponent(taskId)}/audio`, {
     method: "PUT",
-    headers: {
-      "Authorization": token,
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ base64 })
   });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Audio upload failed: ${text}`);
-  }
-
-  return res.json();
 }
 
 export async function transcribeTaskAudio(taskId) {
