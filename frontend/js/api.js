@@ -53,18 +53,14 @@ export async function updateTask(taskId, updates) {
 }
 
 export async function snoozeTask(taskId) {
-  return api(`/tasks/${encodeURIComponent(taskId)}/status`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status: "SNOOZE" })
+  return api(`/tasks/${encodeURIComponent(taskId)}/snooze`, {
+    method: "POST"
   });
 }
 
 export async function doneTask(taskId) {
-  return api(`/tasks/${encodeURIComponent(taskId)}/status`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status: "DONE" })
+  return api(`/tasks/${encodeURIComponent(taskId)}/done`, {
+    method: "POST"
   });
 }
 
