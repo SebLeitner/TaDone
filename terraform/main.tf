@@ -211,6 +211,11 @@ resource "aws_iam_role_policy_attachment" "lambda_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+resource "aws_iam_role_policy_attachment" "lambda_transcribe" {
+  role       = aws_iam_role.lambda_exec.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonTranscribeFullAccess"
+}
+
 resource "aws_iam_role_policy" "lambda_permissions" {
   name = "${var.project_name}-lambda-permissions-${var.environment}"
   role = aws_iam_role.lambda_exec.id
