@@ -1,8 +1,5 @@
-// AWS SDK v3 using CommonJS require()
-const {
-  DynamoDBClient
-} = require("@aws-sdk/client-dynamodb");
-
+// AWS SDK v3
+const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
 const {
   DynamoDBDocumentClient,
   QueryCommand,
@@ -12,12 +9,7 @@ const {
   DeleteCommand
 } = require("@aws-sdk/lib-dynamodb");
 
-const {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand
-} = require("@aws-sdk/client-s3");
-
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const crypto = require("crypto");
 
 // === CONFIG ===
@@ -45,9 +37,9 @@ function json(status, body) {
     statusCode: status,
     headers: {
       "Content-Type": "application/json",
-      ...corsHeaders(),
+      ...corsHeaders()
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   };
 }
 
@@ -62,6 +54,7 @@ function nextMidnight() {
 
 async function autoUnsnooze(userId, tasks) {
   const now = new Date().toISOString();
+
   const updates = [];
 
   for (const t of tasks) {
@@ -72,13 +65,13 @@ async function autoUnsnooze(userId, tasks) {
             TableName: TASKS_TABLE,
             Key: { userId, taskId: t.taskId },
             UpdateExpression:
-              "set #s = :todo, snoozedUntil = :null, updatedAt = :u",
+              "SET #s = :todo, snoozedUntil = :null, updatedAt = :u",
             ExpressionAttributeNames: { "#s": "status" },
             ExpressionAttributeValues: {
               ":todo": "TODO",
               ":null": null,
-              ":u": new Date().toISOString(),
-            },
+              ":u": new Date().toISOString()
+            }
           })
         )
       );
@@ -93,19 +86,17 @@ async function autoUnsnooze(userId, tasks) {
 
 // === MAIN HANDLER ===
 exports.handler = async (event) => {
-  // METHOD DETECTION (safe for all HTTP API v2 variations)
   const method =
     event?.requestContext?.http?.method ||
-    event?.requestContext?.httpMethod ||
-    (event?.requestContext?.routeKey?.startsWith("OPTIONS") ? "OPTIONS" : null);
+    event?.requestContext?.httpMethod;
 
   const path = event?.requestContext?.http?.path || event.rawPath;
 
-  // === CORS PRE-FLIGHT ===
+  // === OPTIONS ===
   if (method === "OPTIONS") {
     return {
       statusCode: 204,
-      headers: corsHeaders(),
+      headers: corsHeaders()
     };
   }
 
@@ -122,7 +113,7 @@ exports.handler = async (event) => {
         new QueryCommand({
           TableName: TASKS_TABLE,
           KeyConditionExpression: "userId = :u",
-          ExpressionAttributeValues: { ":u": userId },
+          ExpressionAttributeValues: { ":u": userId }
         })
       );
 
@@ -148,13 +139,13 @@ exports.handler = async (event) => {
         updatedAt: now,
         snoozeCount: 0,
         snoozedUntil: null,
-        audioKey: null,
+        audioKey: null
       };
 
       await dynamo.send(
         new PutCommand({
           TableName: TASKS_TABLE,
-          Item: item,
+          Item: item
         })
       );
 
@@ -164,23 +155,39 @@ exports.handler = async (event) => {
     // =======================
     // PUT /tasks/{id}
     // =======================
-    if (method === "PUT" && path.startsWith("/tasks/")) {
+    if (method === "PUT" && path.startsWith("/tasks/") && !path.endsWith("/audio")) {
       const taskId = path.split("/")[2];
       const body = JSON.parse(event.body || "{}");
+
       const now = new Date().toISOString();
+
+      // robust optional fields
+      const exp = [];
+      const names = {};
+      const vals = {};
+
+      if (body.title !== undefined) {
+        exp.push("#t = :t");
+        names["#t"] = "title";
+        vals[":t"] = body.title;
+      }
+      if (body.description !== undefined) {
+        exp.push("#d = :d");
+        names["#d"] = "description";
+        vals[":d"] = body.description;
+      }
+
+      exp.push("updatedAt = :u");
+      vals[":u"] = now;
 
       const res = await dynamo.send(
         new UpdateCommand({
           TableName: TASKS_TABLE,
           Key: { userId, taskId },
-          UpdateExpression:
-            "set title = :t, description = :d, updatedAt = :u",
-          ExpressionAttributeValues: {
-            ":t": body.title,
-            ":d": body.description,
-            ":u": now,
-          },
-          ReturnValues: "ALL_NEW",
+          UpdateExpression: "SET " + exp.join(", "),
+          ExpressionAttributeValues: vals,
+          ExpressionAttributeNames: names,
+          ReturnValues: "ALL_NEW"
         })
       );
 
@@ -188,37 +195,52 @@ exports.handler = async (event) => {
     }
 
     // =======================
-    // POST /tasks/{id}/status
+    // POST /tasks/{id}/snooze
     // =======================
-    if (method === "POST" && path.endsWith("/status")) {
+    if (method === "POST" && path.endsWith("/snooze")) {
       const taskId = path.split("/")[2];
-      const body = JSON.parse(event.body || "{}");
       const now = new Date().toISOString();
-
-      let UpdateExpression = "set #s = :s, updatedAt = :u";
-      let ExpressionAttributeValues = { ":s": body.status, ":u": now };
-      let ExpressionAttributeNames = { "#s": "status" };
-
-      if (body.status === "SNOOZE") {
-        UpdateExpression +=
-          ", snoozeCount = snoozeCount + :one, snoozedUntil = :until";
-        ExpressionAttributeValues[":one"] = 1;
-        ExpressionAttributeValues[":until"] = nextMidnight();
-      }
-
-      if (body.status === "DONE") {
-        UpdateExpression += ", snoozedUntil = :null";
-        ExpressionAttributeValues[":null"] = null;
-      }
 
       const res = await dynamo.send(
         new UpdateCommand({
           TableName: TASKS_TABLE,
           Key: { userId, taskId },
-          UpdateExpression,
-          ExpressionAttributeNames,
-          ExpressionAttributeValues,
-          ReturnValues: "ALL_NEW",
+          UpdateExpression:
+            "SET #s = :s, snoozeCount = snoozeCount + :one, snoozedUntil = :until, updatedAt = :u",
+          ExpressionAttributeNames: { "#s": "status" },
+          ExpressionAttributeValues: {
+            ":s": "SNOOZE",
+            ":one": 1,
+            ":until": nextMidnight(),
+            ":u": now
+          },
+          ReturnValues: "ALL_NEW"
+        })
+      );
+
+      return json(200, res.Attributes);
+    }
+
+    // =======================
+    // POST /tasks/{id}/done
+    // =======================
+    if (method === "POST" && path.endsWith("/done")) {
+      const taskId = path.split("/")[2];
+      const now = new Date().toISOString();
+
+      const res = await dynamo.send(
+        new UpdateCommand({
+          TableName: TASKS_TABLE,
+          Key: { userId, taskId },
+          UpdateExpression:
+            "SET #s = :s, snoozedUntil = :null, updatedAt = :u",
+          ExpressionAttributeNames: { "#s": "status" },
+          ExpressionAttributeValues: {
+            ":s": "DONE",
+            ":null": null,
+            ":u": now
+          },
+          ReturnValues: "ALL_NEW"
         })
       );
 
@@ -228,28 +250,26 @@ exports.handler = async (event) => {
     // =======================
     // DELETE /tasks/{id}
     // =======================
-    if (method === "DELETE" && path.startsWith("/tasks/")) {
+    if (method === "DELETE" && path.startsWith("/tasks/") && !path.endsWith("/audio")) {
       const taskId = path.split("/")[2];
 
       const res = await dynamo.send(
         new GetCommand({
           TableName: TASKS_TABLE,
-          Key: { userId, taskId },
+          Key: { userId, taskId }
         })
       );
 
-      const task = res.Item;
-      if (!task) return json(404, { error: "Task not found" });
-
-      if (task.status !== "DONE") {
+      if (!res.Item) return json(404, { error: "Task not found" });
+      if (res.Item.status !== "DONE") {
         return json(400, { error: "Task must be DONE before deleting" });
       }
 
-      if (task.audioKey) {
+      if (res.Item.audioKey) {
         await s3.send(
           new DeleteObjectCommand({
             Bucket: AUDIO_BUCKET,
-            Key: task.audioKey,
+            Key: res.Item.audioKey
           })
         );
       }
@@ -257,7 +277,7 @@ exports.handler = async (event) => {
       await dynamo.send(
         new DeleteCommand({
           TableName: TASKS_TABLE,
-          Key: { userId, taskId },
+          Key: { userId, taskId }
         })
       );
 
@@ -271,37 +291,42 @@ exports.handler = async (event) => {
       const taskId = path.split("/")[2];
       const body = JSON.parse(event.body || "{}");
 
-      const audioBuffer = Buffer.from(body.base64, "base64");
+      if (!body.base64) {
+        return json(400, { error: "Missing base64 audio data" });
+      }
+
+      const audioData = Buffer.from(body.base64, "base64");
       const key = `audio/${userId}/${taskId}.webm`;
 
       await s3.send(
         new PutObjectCommand({
           Bucket: AUDIO_BUCKET,
           Key: key,
-          Body: audioBuffer,
-          ContentType: "audio/webm",
+          Body: audioData,
+          ContentType: "audio/webm"
         })
       );
+
+      const now = new Date().toISOString();
 
       const res = await dynamo.send(
         new UpdateCommand({
           TableName: TASKS_TABLE,
           Key: { userId, taskId },
-          UpdateExpression: "set audioKey = :k, updatedAt = :u",
+          UpdateExpression: "SET audioKey = :k, updatedAt = :u",
           ExpressionAttributeValues: {
             ":k": key,
-            ":u": new Date().toISOString(),
+            ":u": now
           },
-          ReturnValues: "ALL_NEW",
+          ReturnValues: "ALL_NEW"
         })
       );
 
       return json(200, res.Attributes);
     }
 
-    // Unknown route
+    // Unknown
     return json(404, { error: "Route not found", method, path });
-
   } catch (err) {
     console.error("ERROR:", err);
     return json(500, { error: err.message || "Server error" });

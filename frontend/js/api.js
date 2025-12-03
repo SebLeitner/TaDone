@@ -53,14 +53,18 @@ export async function updateTask(taskId, updates) {
 }
 
 export async function snoozeTask(taskId) {
-  return api(`/tasks/${encodeURIComponent(taskId)}/snooze`, {
-    method: "POST"
+  return api(`/tasks/${encodeURIComponent(taskId)}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "SNOOZE" })
   });
 }
 
 export async function doneTask(taskId) {
-  return api(`/tasks/${encodeURIComponent(taskId)}/done`, {
-    method: "POST"
+  return api(`/tasks/${encodeURIComponent(taskId)}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "DONE" })
   });
 }
 
@@ -70,19 +74,24 @@ export async function deleteTask(taskId) {
   });
 }
 
-// Audio Upload: erwartet ein FormData im Backend
 export async function uploadTaskAudio(taskId, blob) {
   const token = getAccessToken();
-  const formData = new FormData();
-  formData.append("file", blob, "note.webm");
-  formData.append("taskId", taskId);
+
+  // Blob → Base64 konvertieren
+  const reader = new FileReader();
+  const base64 = await new Promise((resolve, reject) => {
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 
   const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/audio`, {
-    method: "POST",
+    method: "PUT",
     headers: {
-      "Authorization": token
+      "Authorization": token,
+      "Content-Type": "application/json"
     },
-    body: formData
+    body: JSON.stringify({ base64 })
   });
 
   if (!res.ok) {
@@ -92,6 +101,7 @@ export async function uploadTaskAudio(taskId, blob) {
 
   return res.json();
 }
+
 
 export const API = {
   fetchTasks,

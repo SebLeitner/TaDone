@@ -93,16 +93,17 @@ async function loadTasks() {
 
 function normalizeTasks(list) {
   return list.map(t => ({
-    id: t.id || t.taskId || t.pk || "",
+    id: t.taskId,
     title: t.title || "",
     description: t.description || "",
-    status: t.status || "todo", // "todo" | "snooze" | "done"
+    status: (t.status || "TODO").toLowerCase(),
     snoozeCount: t.snoozeCount || 0,
-    createdAt: t.createdAt || t.created_at || new Date().toISOString(),
-    updatedAt: t.updatedAt || t.updated_at || null,
-    hasAudio: !!t.hasAudio || !!t.audioKey
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    hasAudio: !!t.audioKey
   }));
 }
+
 
 function renderTaskList() {
   const container = document.getElementById("task-list");
