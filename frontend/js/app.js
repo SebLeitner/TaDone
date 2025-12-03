@@ -100,7 +100,8 @@ function normalizeTasks(list) {
     snoozeCount: t.snoozeCount || 0,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
-    hasAudio: !!t.audioKey
+    hasAudio: !!t.audioKey,
+    audioKey: t.audioKey || null
   }));
 }
 
@@ -243,6 +244,15 @@ function openTaskModalForEdit(task) {
 
   if (task.status === "done") {
     document.getElementById("btn-delete-task").classList.remove("d-none");
+  }
+
+  // Bestehendes Audio anzeigen
+  if (task.audioKey) {
+    const audioPlayer = document.getElementById("audio-player");
+    audioPlayer.src = `https://${CONFIG.audioBucket}.s3.${CONFIG.cognito.region}.amazonaws.com/${task.audioKey}`;
+    audioPlayer.style.display = "block";
+    document.getElementById("btn-audio-play").disabled = false;
+    document.getElementById("audio-status").textContent = "Aufnahme vorhanden.";
   }
 
   taskModal.show();
