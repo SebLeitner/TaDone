@@ -7,6 +7,7 @@ import {
   snoozeTask,
   doneTask,
   deleteTask,
+  getTaskAudioUrl,
   uploadTaskAudio
 } from "./api.js";
 import { initAudioControls } from "./audio.js";
@@ -217,7 +218,7 @@ function openTaskModalForNew() {
   taskModal.show();
 }
 
-function openTaskModalForEdit(task) {
+async function openTaskModalForEdit(task) {
   resetTaskModal();
   document.getElementById("taskModalLabel").textContent = "Task bearbeiten";
   document.getElementById("task-id").value = task.id;
@@ -249,10 +250,23 @@ function openTaskModalForEdit(task) {
   // Bestehendes Audio anzeigen
   if (task.audioKey) {
     const audioPlayer = document.getElementById("audio-player");
-    audioPlayer.src = `https://${CONFIG.audioBucket}.s3.${CONFIG.cognito.region}.amazonaws.com/${task.audioKey}`;
-    audioPlayer.style.display = "block";
-    document.getElementById("btn-audio-play").disabled = false;
-    document.getElementById("audio-status").textContent = "Aufnahme vorhanden.";
+    const statusLabel = document.getElementById("audio-status");
+    const playBtn = document.getElementById("btn-audio-play");
+
+    statusLabel.textContent = "Audio wird geladen...";
+    audioPlayer.style.display = "none";
+    playBtn.disabled = true;
+
+    try {
+      const { url } = await getTaskAudioUrl(task.id || task.taskId);
+      audioPlayer.src = url;
+      audioPlayer.style.display = "block";
+      playBtn.disabled = false;
+      statusLabel.textContent = "Aufnahme vorhanden.";
+    } catch (err) {
+      console.error("Audio URL fetch failed", err);
+      statusLabel.textContent = "Audio konnte nicht geladen werden.";
+    }
   }
 
   taskModal.show();

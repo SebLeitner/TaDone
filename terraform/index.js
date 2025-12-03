@@ -9,7 +9,13 @@ const {
   DeleteCommand
 } = require("@aws-sdk/lib-dynamodb");
 
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand
+} = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const crypto = require("crypto");
 
 // === CONFIG ===
@@ -282,6 +288,31 @@ exports.handler = async (event) => {
       );
 
       return json(200, { ok: true });
+    }
+
+    // =======================
+    // GET /tasks/{id}/audio
+    // =======================
+    if (method === "GET" && path.endsWith("/audio")) {
+      const taskId = path.split("/")[2];
+
+      const res = await dynamo.send(
+        new GetCommand({
+          TableName: TASKS_TABLE,
+          Key: { userId, taskId }
+        })
+      );
+
+      if (!res.Item) return json(404, { error: "Task not found" });
+      if (!res.Item.audioKey) return json(404, { error: "No audio for task" });
+
+      const url = await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: AUDIO_BUCKET, Key: res.Item.audioKey }),
+        { expiresIn: 300 }
+      );
+
+      return json(200, { url });
     }
 
     // =======================
