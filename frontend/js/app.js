@@ -53,12 +53,19 @@ function initUI() {
   }
 
   document.getElementById("btn-logout").addEventListener("click", logout);
-  document.getElementById("btn-refresh").addEventListener("click", loadTasks);
-  document.getElementById("btn-add-task").addEventListener("click", () => openTaskModalForNew());
+  document.getElementById("btn-refresh").addEventListener("click", async () => {
+    await ensureAuthenticated();
+    await loadTasks();
+  });
+  document.getElementById("btn-add-task").addEventListener("click", async () => {
+    await ensureAuthenticated();
+    openTaskModalForNew();
+  });
 
   // Footer Nav
   document.querySelectorAll(".nav-view-button").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
+      await ensureAuthenticated();
       currentView = btn.dataset.view;
       document.querySelectorAll(".nav-view-button").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
@@ -109,6 +116,7 @@ function initUI() {
 
 async function loadTasks() {
   try {
+    await ensureAuthenticated();
     const list = await fetchTasks();
     allTasks = normalizeTasks(list || []);
     renderTaskList();
@@ -300,23 +308,11 @@ function renderTaskList() {
     .filter(t => t.status === "archived")
     .sort((a, b) => new Date(b.archivedAt || b.updatedAt || b.createdAt) - new Date(a.archivedAt || a.updatedAt || a.createdAt));
 
-  if (!doneTasks.length && !archivedTasks.length) {
-    const empty = document.createElement("div");
-    empty.className = "text-center text-muted py-4";
-    empty.textContent = "Noch nichts erledigt – oder alles gelöscht 😉";
-    container.appendChild(empty);
-    return;
-  }
-
-  if (doneTasks.length) {
-    renderSection(container, archivedTasks.length ? "Done" : "", doneTasks);
-  }
-  if (archivedTasks.length) {
-    const hint = document.createElement("div");
-    hint.className = "text-center text-secondary small py-2 border-top border-secondary";
-    hint.textContent = "Älter als 7 Tage: automatisch archiviert.";
-    container.appendChild(hint);
-    renderSection(container, "Archiviert", archivedTasks);
+    item.addEventListener("click", async () => {
+      await ensureAuthenticated();
+      openTaskModalForEdit(t);
+    });
+    container.appendChild(item);
   }
 }
 
