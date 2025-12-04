@@ -562,11 +562,7 @@ exports.handler = async (event) => {
       if (res.Item.status === "ARCHIVED") return json(400, { error: "Task is archived" });
       if (!res.Item.audioKey) return json(400, { error: "No audio for task" });
 
-      const mediaUrl = await getSignedUrl(
-        s3,
-        new GetObjectCommand({ Bucket: AUDIO_BUCKET, Key: res.Item.audioKey }),
-        { expiresIn: 300 }
-      );
+      const mediaUrl = `s3://${AUDIO_BUCKET}/${res.Item.audioKey}`;
 
       const jobName = sanitizeJobName(`tadone-${userId}-${taskId}-${Date.now()}`);
 
