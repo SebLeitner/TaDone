@@ -308,11 +308,20 @@ function renderTaskList() {
     .filter(t => t.status === "archived")
     .sort((a, b) => new Date(b.archivedAt || b.updatedAt || b.createdAt) - new Date(a.archivedAt || a.updatedAt || a.createdAt));
 
-    item.addEventListener("click", async () => {
-      await ensureAuthenticated();
-      openTaskModalForEdit(t);
-    });
-    container.appendChild(item);
+  if (!doneTasks.length && !archivedTasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "text-center text-muted py-4";
+    empty.textContent = "Keine erledigten oder archivierten Tasks.";
+    container.appendChild(empty);
+    return;
+  }
+
+  if (doneTasks.length) {
+    renderSection(container, archivedTasks.length ? "Done" : "", doneTasks);
+  }
+
+  if (archivedTasks.length) {
+    renderSection(container, doneTasks.length ? "Archiviert" : "", archivedTasks);
   }
 }
 
