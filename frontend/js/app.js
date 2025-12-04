@@ -35,12 +35,19 @@ function initUI() {
   }
 
   document.getElementById("btn-logout").addEventListener("click", logout);
-  document.getElementById("btn-refresh").addEventListener("click", loadTasks);
-  document.getElementById("btn-add-task").addEventListener("click", () => openTaskModalForNew());
+  document.getElementById("btn-refresh").addEventListener("click", async () => {
+    await ensureAuthenticated();
+    await loadTasks();
+  });
+  document.getElementById("btn-add-task").addEventListener("click", async () => {
+    await ensureAuthenticated();
+    openTaskModalForNew();
+  });
 
   // Footer Nav
   document.querySelectorAll(".nav-view-button").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
+      await ensureAuthenticated();
       currentView = btn.dataset.view;
       document.querySelectorAll(".nav-view-button").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
@@ -85,6 +92,7 @@ function initUI() {
 
 async function loadTasks() {
   try {
+    await ensureAuthenticated();
     const list = await fetchTasks();
     allTasks = normalizeTasks(list || []);
     renderTaskList();
@@ -190,7 +198,10 @@ function renderTaskList() {
     item.appendChild(left);
     item.appendChild(right);
 
-    item.addEventListener("click", () => openTaskModalForEdit(t));
+    item.addEventListener("click", async () => {
+      await ensureAuthenticated();
+      openTaskModalForEdit(t);
+    });
     container.appendChild(item);
   }
 }
