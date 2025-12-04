@@ -64,6 +64,11 @@ function nextMidnight() {
   ).toISOString();
 }
 
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+}
+
 async function autoUnsnooze(userId, tasks) {
   const now = new Date().toISOString();
 
@@ -89,6 +94,90 @@ async function autoUnsnooze(userId, tasks) {
       );
       t.status = "TODO";
       t.snoozedUntil = null;
+    }
+  }
+
+  if (updates.length > 0) await Promise.all(updates);
+  return tasks;
+}
+
+async function autoSnoozeOverdue(userId, tasks) {
+  const todayStart = startOfToday();
+  const updates = [];
+
+  for (const t of tasks) {
+    if (t.status === "TODO") {
+      const plannedInFuture =
+        t.dueDate && new Date(t.dueDate).toISOString() > todayStart;
+      if (plannedInFuture) continue;
+
+      const lastTouch = t.updatedAt || t.createdAt;
+      if (lastTouch && lastTouch < todayStart) {
+        const now = new Date().toISOString();
+        const until = nextMidnight();
+
+        updates.push(
+          dynamo.send(
+            new UpdateCommand({
+              TableName: TASKS_TABLE,
+              Key: { userId, taskId: t.taskId },
+              UpdateExpression:
+                "SET #s = :s, snoozeCount = if_not_exists(snoozeCount, :zero) + :one, snoozedUntil = :until, updatedAt = :u",
+              ExpressionAttributeNames: { "#s": "status" },
+              ExpressionAttributeValues: {
+                ":s": "SNOOZE",
+                ":one": 1,
+                ":zero": 0,
+                ":until": until,
+                ":u": now
+              }
+            })
+          )
+        );
+
+        t.status = "SNOOZE";
+        t.snoozeCount = (t.snoozeCount || 0) + 1;
+        t.snoozedUntil = until;
+        t.updatedAt = now;
+      }
+    }
+  }
+
+  if (updates.length > 0) await Promise.all(updates);
+  return tasks;
+}
+
+async function autoArchiveDone(userId, tasks) {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const updates = [];
+
+  for (const t of tasks) {
+    if (t.status === "DONE") {
+      const doneAt = t.doneAt || t.updatedAt || t.createdAt;
+      if (doneAt && doneAt < sevenDaysAgo) {
+        const now = new Date().toISOString();
+
+        updates.push(
+          dynamo.send(
+            new UpdateCommand({
+              TableName: TASKS_TABLE,
+              Key: { userId, taskId: t.taskId },
+              UpdateExpression:
+                "SET #s = :arch, archivedAt = :a, updatedAt = :u",
+              ExpressionAttributeNames: { "#s": "status" },
+              ExpressionAttributeValues: {
+                ":arch": "ARCHIVED",
+                ":a": now,
+                ":u": now
+              }
+            })
+          )
+        );
+
+        t.status = "ARCHIVED";
+        t.archivedAt = now;
+        t.updatedAt = now;
+      }
     }
   }
 
@@ -163,8 +252,11 @@ exports.handler = async (event) => {
         })
       );
 
-      const cleaned = await autoUnsnooze(userId, res.Items || []);
-      return json(200, cleaned);
+      let tasks = res.Items || [];
+      tasks = await autoUnsnooze(userId, tasks);
+      tasks = await autoSnoozeOverdue(userId, tasks);
+      tasks = await autoArchiveDone(userId, tasks);
+      return json(200, tasks);
     }
 
     // =======================
@@ -174,6 +266,19 @@ exports.handler = async (event) => {
       const body = JSON.parse(event.body || "{}");
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
+
+      let dueDate = null;
+      if (body.dueDate) {
+        const parsed = new Date(body.dueDate);
+        if (isNaN(parsed.getTime())) {
+          return json(400, { error: "Invalid dueDate" });
+        }
+        dueDate = new Date(
+          parsed.getFullYear(),
+          parsed.getMonth(),
+          parsed.getDate()
+        ).toISOString();
+      }
 
       const item = {
         userId,
@@ -185,7 +290,10 @@ exports.handler = async (event) => {
         updatedAt: now,
         snoozeCount: 0,
         snoozedUntil: null,
-        audioKey: null
+        audioKey: null,
+        dueDate,
+        doneAt: null,
+        archivedAt: null
       };
 
       await dynamo.send(
@@ -205,12 +313,16 @@ exports.handler = async (event) => {
       const taskId = path.split("/")[2];
       const body = JSON.parse(event.body || "{}");
 
+      if (body.dueDate !== undefined) {
+        return json(400, { error: "Due date can only be set on creation" });
+      }
+
       const now = new Date().toISOString();
 
       // robust optional fields
       const exp = [];
-      const names = {};
-      const vals = {};
+      const names = { "#s": "status" };
+      const vals = { ":arch": "ARCHIVED" };
 
       if (body.title !== undefined) {
         exp.push("#t = :t");
@@ -233,6 +345,7 @@ exports.handler = async (event) => {
           UpdateExpression: "SET " + exp.join(", "),
           ExpressionAttributeValues: vals,
           ExpressionAttributeNames: names,
+          ConditionExpression: "#s <> :arch",
           ReturnValues: "ALL_NEW"
         })
       );
@@ -258,8 +371,10 @@ exports.handler = async (event) => {
             ":s": "SNOOZE",
             ":one": 1,
             ":until": nextMidnight(),
-            ":u": now
+            ":u": now,
+            ":arch": "ARCHIVED"
           },
+          ConditionExpression: "#s <> :arch",
           ReturnValues: "ALL_NEW"
         })
       );
@@ -279,13 +394,44 @@ exports.handler = async (event) => {
           TableName: TASKS_TABLE,
           Key: { userId, taskId },
           UpdateExpression:
-            "SET #s = :s, snoozedUntil = :null, updatedAt = :u",
+            "SET #s = :s, snoozedUntil = :null, doneAt = :now, updatedAt = :u",
           ExpressionAttributeNames: { "#s": "status" },
           ExpressionAttributeValues: {
             ":s": "DONE",
             ":null": null,
-            ":u": now
+            ":u": now,
+            ":now": now,
+            ":arch": "ARCHIVED"
           },
+          ConditionExpression: "#s <> :arch",
+          ReturnValues: "ALL_NEW"
+        })
+      );
+
+      return json(200, res.Attributes);
+    }
+
+    // =======================
+    // POST /tasks/{id}/reactivate
+    // =======================
+    if (method === "POST" && path.endsWith("/reactivate")) {
+      const taskId = path.split("/")[2];
+      const now = new Date().toISOString();
+
+      const res = await dynamo.send(
+        new UpdateCommand({
+          TableName: TASKS_TABLE,
+          Key: { userId, taskId },
+          UpdateExpression:
+            "SET #s = :todo, snoozedUntil = :null, doneAt = :null, archivedAt = :null, updatedAt = :u",
+          ExpressionAttributeNames: { "#s": "status" },
+          ExpressionAttributeValues: {
+            ":todo": "TODO",
+            ":null": null,
+            ":u": now,
+            ":arch": "ARCHIVED"
+          },
+          ConditionExpression: "#s <> :arch",
           ReturnValues: "ALL_NEW"
         })
       );
@@ -385,10 +531,13 @@ exports.handler = async (event) => {
           TableName: TASKS_TABLE,
           Key: { userId, taskId },
           UpdateExpression: "SET audioKey = :k, updatedAt = :u",
+          ExpressionAttributeNames: { "#s": "status" },
           ExpressionAttributeValues: {
             ":k": key,
-            ":u": now
+            ":u": now,
+            ":arch": "ARCHIVED"
           },
+          ConditionExpression: "#s <> :arch",
           ReturnValues: "ALL_NEW"
         })
       );
@@ -410,6 +559,7 @@ exports.handler = async (event) => {
       );
 
       if (!res.Item) return json(404, { error: "Task not found" });
+      if (res.Item.status === "ARCHIVED") return json(400, { error: "Task is archived" });
       if (!res.Item.audioKey) return json(400, { error: "No audio for task" });
 
       const mediaUrl = await getSignedUrl(
@@ -448,6 +598,9 @@ exports.handler = async (event) => {
     return json(404, { error: "Route not found", method, path });
   } catch (err) {
     console.error("ERROR:", err);
+    if (err?.name === "ConditionalCheckFailedException") {
+      return json(400, { error: "Operation not allowed on this task" });
+    }
     return json(500, { error: err.message || "Server error" });
   }
 };

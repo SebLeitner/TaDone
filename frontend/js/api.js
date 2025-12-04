@@ -64,6 +64,12 @@ export async function doneTask(taskId) {
   });
 }
 
+export async function reactivateTask(taskId) {
+  return api(`/tasks/${encodeURIComponent(taskId)}/reactivate`, {
+    method: "POST"
+  });
+}
+
 export async function deleteTask(taskId) {
   return api(`/tasks/${encodeURIComponent(taskId)}`, {
     method: "DELETE"
@@ -105,6 +111,7 @@ export const API = {
   updateTask,
   snoozeTask,
   doneTask,
+  reactivateTask,
   deleteTask,
   getTaskAudioUrl,
   uploadTaskAudio,
