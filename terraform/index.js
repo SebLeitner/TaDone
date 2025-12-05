@@ -75,7 +75,7 @@ async function autoUnsnooze(userId, tasks) {
   const updates = [];
 
   for (const t of tasks) {
-    if (t.status === "SNOOZE" && t.snoozedUntil < now) {
+    if (t.status === "SNOOZE" && t.snoozedUntil && t.snoozedUntil <= now) {
       updates.push(
         dynamo.send(
           new UpdateCommand({
@@ -365,16 +365,18 @@ exports.handler = async (event) => {
           TableName: TASKS_TABLE,
           Key: { userId, taskId },
           UpdateExpression:
-            "SET #s = :s, snoozeCount = snoozeCount + :one, snoozedUntil = :until, updatedAt = :u",
+            "SET #s = :s, snoozeCount = if_not_exists(snoozeCount, :zero) + :one, snoozedUntil = :until, updatedAt = :u",
           ExpressionAttributeNames: { "#s": "status" },
           ExpressionAttributeValues: {
             ":s": "SNOOZE",
             ":one": 1,
+            ":zero": 0,
             ":until": nextMidnight(),
             ":u": now,
-            ":arch": "ARCHIVED"
+            ":arch": "ARCHIVED",
+            ":done": "DONE"
           },
-          ConditionExpression: "#s <> :arch",
+          ConditionExpression: "#s <> :arch AND #s <> :done",
           ReturnValues: "ALL_NEW"
         })
       );
@@ -416,21 +418,53 @@ exports.handler = async (event) => {
     // =======================
     if (method === "POST" && path.endsWith("/reactivate")) {
       const taskId = path.split("/")[2];
-      const now = new Date().toISOString();
+      const now = new Date();
+
+      const existing = await dynamo.send(
+        new GetCommand({
+          TableName: TASKS_TABLE,
+          Key: { userId, taskId }
+        })
+      );
+
+      if (!existing.Item) return json(404, { error: "Task not found" });
+
+      const snoozedUntilDate = existing.Item.snoozedUntil
+        ? new Date(existing.Item.snoozedUntil)
+        : null;
+      const shouldDecreaseSnoozeCount =
+        existing.Item.status === "SNOOZE" &&
+        snoozedUntilDate &&
+        snoozedUntilDate > now;
+
+      const updateParts = [
+        "#s = :todo",
+        "snoozedUntil = :null",
+        "doneAt = :null",
+        "archivedAt = :null",
+        "updatedAt = :u"
+      ];
+
+      const values = {
+        ":todo": "TODO",
+        ":null": null,
+        ":u": now.toISOString(),
+        ":arch": "ARCHIVED"
+      };
+
+      if (shouldDecreaseSnoozeCount) {
+        const newCount = Math.max(0, (existing.Item.snoozeCount || 0) - 1);
+        updateParts.push("snoozeCount = :sc");
+        values[":sc"] = newCount;
+      }
 
       const res = await dynamo.send(
         new UpdateCommand({
           TableName: TASKS_TABLE,
           Key: { userId, taskId },
-          UpdateExpression:
-            "SET #s = :todo, snoozedUntil = :null, doneAt = :null, archivedAt = :null, updatedAt = :u",
+          UpdateExpression: "SET " + updateParts.join(", "),
           ExpressionAttributeNames: { "#s": "status" },
-          ExpressionAttributeValues: {
-            ":todo": "TODO",
-            ":null": null,
-            ":u": now,
-            ":arch": "ARCHIVED"
-          },
+          ExpressionAttributeValues: values,
           ConditionExpression: "#s <> :arch",
           ReturnValues: "ALL_NEW"
         })
