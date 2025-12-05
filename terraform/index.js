@@ -290,7 +290,12 @@ exports.handler = async (event) => {
         ).toISOString();
       }
 
-      let status = (body.status || "TODO").toUpperCase();
+      // Respect the explicit status coming from the client. Without trimming we
+      // might accidentally interpret a provided "inactive" flag as empty and
+      // fall back to TODO.
+      let status = body.status === undefined
+        ? "TODO"
+        : String(body.status).trim().toUpperCase();
       if (!ALLOWED_STATUSES.includes(status)) {
         return json(400, { error: "Invalid status" });
       }

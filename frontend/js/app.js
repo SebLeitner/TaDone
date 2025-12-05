@@ -542,6 +542,14 @@ async function onSaveTask(e) {
   const dueDateValue = document.getElementById("task-due-date").value;
   const inactiveChecked = document.getElementById("task-inactive-toggle").checked;
 
+  // Safety net: reflect the inactive choice directly in the modal badge so the
+  // user can immediately see which status will be sent to the backend.
+  const badge = document.getElementById("task-status-badge");
+  if (inactiveChecked) {
+    badge.textContent = "Inaktiv";
+    badge.className = "badge rounded-pill text-bg-dark";
+  }
+
   if (!title) {
     alert("Titel ist erforderlich.");
     return;
