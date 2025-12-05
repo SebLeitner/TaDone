@@ -596,6 +596,7 @@ async function onTranscribeAudio() {
   const descriptionInput = document.getElementById("task-description");
   const taskIdInput = document.getElementById("task-id");
   const dueDateValue = document.getElementById("task-due-date").value;
+  const inactiveChecked = document.getElementById("task-inactive-toggle").checked;
 
   const hasAudio = currentAudioBlob || audioPlayer.src;
   if (!hasAudio) {
@@ -616,8 +617,11 @@ async function onTranscribeAudio() {
 
     if (!taskId) {
       const payload = { title, description };
-      if (dueDateValue) {
+      if (dueDateValue && !inactiveChecked) {
         payload.dueDate = dueDateValue;
+      }
+      if (inactiveChecked) {
+        payload.status = "INACTIVE";
       }
       const created = await createTask(payload);
       taskId = created.id || created.taskId;
