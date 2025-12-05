@@ -24,6 +24,12 @@ async function api(path, options = {}) {
     throw new Error(`API error ${res.status}: ${text}`);
   }
 
+  // Einige Endpunkte (z. B. erfolgreiche Updates) antworten mit 204 No Content.
+  // In diesem Fall schlägt das Parsen fehl, daher liefern wir explizit null zurück.
+  if (res.status === 204) {
+    return null;
+  }
+
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) {
     return res.json();
