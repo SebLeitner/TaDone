@@ -39,6 +39,10 @@ function isPlannedTask(task) {
   return dueLocal > startOfToday();
 }
 
+function isInactiveTask(task) {
+  return task.status === "inactive";
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   await ensureAuthenticated();
   initUI();
@@ -74,7 +78,8 @@ function initUI() {
       btn.classList.add("active");
       document.getElementById("current-view-label").textContent =
         currentView === "todo" ? "ToDo" :
-        currentView === "snooze" ? "Snooze" : "Done";
+        currentView === "snooze" ? "Snooze" :
+        currentView === "inactive" ? "Inaktiv" : "Done";
       renderTaskList();
     });
   });
@@ -103,9 +108,23 @@ function initUI() {
     dueDateInput.min = formatDateForInput(new Date());
   }
 
+  const inactiveToggle = document.getElementById("task-inactive-toggle");
+  inactiveToggle.addEventListener("change", () => {
+    const hint = document.getElementById("task-inactive-hint");
+    if (inactiveToggle.checked) {
+      dueDateInput.value = "";
+      dueDateInput.disabled = true;
+      hint.textContent = "Task bleibt ohne Fälligkeit, bis er aktiviert wird.";
+    } else {
+      dueDateInput.disabled = false;
+      hint.textContent = "Wartet auf externe Abhängigkeiten und ist weder fällig noch geplant.";
+    }
+  });
+
   document.getElementById("btn-snooze-task").addEventListener("click", onSnoozeTask);
   document.getElementById("btn-done-task").addEventListener("click", onDoneTask);
   document.getElementById("btn-reactivate-task").addEventListener("click", onReactivateTask);
+  document.getElementById("btn-activate-task").addEventListener("click", onActivateTask);
   document.getElementById("btn-delete-task").addEventListener("click", onDeleteTask);
   document.getElementById("btn-audio-transcribe").addEventListener("click", onTranscribeAudio);
 
@@ -188,6 +207,10 @@ function createTaskListItem(task) {
   const created = new Date(task.createdAt);
   metaParts.push(`angelegt: ${created.toLocaleDateString()} ${created.toLocaleTimeString().slice(0, 5)}`);
 
+  if (isInactiveTask(task)) {
+    metaParts.push("wartet auf Aktivierung");
+  }
+
   if (task.dueDate) {
     const due = new Date(task.dueDate);
     const planned = due > startOfToday();
@@ -219,17 +242,21 @@ function createTaskListItem(task) {
       ? planned ? "text-bg-secondary" : "text-bg-info"
       : task.status === "snooze"
         ? "text-bg-warning"
-        : task.status === "done"
-          ? "text-bg-success"
-          : "text-bg-secondary");
+        : task.status === "inactive"
+          ? "text-bg-secondary"
+          : task.status === "done"
+            ? "text-bg-success"
+            : "text-bg-secondary");
   statusBadge.textContent =
     task.status === "todo"
       ? planned ? "Geplant" : "ToDo"
       : task.status === "snooze"
         ? "Snooze"
-        : task.status === "done"
-          ? "Done"
-          : "Archiviert";
+        : task.status === "inactive"
+          ? "Inaktiv"
+          : task.status === "done"
+            ? "Done"
+            : "Archiviert";
   right.appendChild(statusBadge);
 
   const snoozeBadge = document.createElement("div");
@@ -298,6 +325,23 @@ function renderTaskList() {
     return;
   }
 
+  if (currentView === "inactive") {
+    const tasks = allTasks
+      .filter(isInactiveTask)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    if (!tasks.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-center text-muted py-4";
+      empty.textContent = "Keine inaktiven Tasks. Alle Abhängigkeiten sind erfüllt!";
+      container.appendChild(empty);
+      return;
+    }
+
+    renderSection(container, "", tasks);
+    return;
+  }
+
   if (currentView === "snooze") {
     const tasks = allTasks
       .filter(t => t.status === "snooze")
@@ -348,6 +392,10 @@ function resetTaskModal() {
   document.getElementById("task-due-date").value = "";
   document.getElementById("task-due-date").disabled = false;
   document.getElementById("task-snooze-count").textContent = "0";
+  document.getElementById("task-inactive-toggle").checked = false;
+  document.getElementById("task-inactive-toggle").disabled = false;
+  document.getElementById("task-current-status").value = "todo";
+  document.getElementById("task-inactive-hint").textContent = "Wartet auf externe Abhängigkeiten und ist weder fällig noch geplant.";
   const snoozeInput = document.getElementById("task-snooze-input");
   if (snoozeInput) {
     snoozeInput.value = 0;
@@ -358,6 +406,7 @@ function resetTaskModal() {
   document.getElementById("task-meta").textContent = "";
   document.getElementById("btn-delete-task").classList.add("d-none");
   document.getElementById("btn-reactivate-task").classList.add("d-none");
+  document.getElementById("btn-activate-task").classList.add("d-none");
   document.getElementById("btn-snooze-task").disabled = false;
   document.getElementById("btn-done-task").disabled = false;
   document.getElementById("btn-reactivate-task").disabled = false;
@@ -394,6 +443,7 @@ async function openTaskModalForEdit(task) {
   resetTaskModal();
   document.getElementById("taskModalLabel").textContent = "Task bearbeiten";
   document.getElementById("task-id").value = task.id;
+  document.getElementById("task-current-status").value = task.status;
   document.getElementById("task-title").value = task.title;
   document.getElementById("task-description").value = task.description || "";
   document.getElementById("task-snooze-count").textContent = task.snoozeCount || 0;
@@ -405,18 +455,35 @@ async function openTaskModalForEdit(task) {
   if (task.dueDate) {
     dueDateInput.value = formatDateForInput(task.dueDate);
   }
-  dueDateInput.disabled = true;
+  dueDateInput.disabled = !isInactiveTask(task);
+
+  const inactiveToggle = document.getElementById("task-inactive-toggle");
+  const inactiveHint = document.getElementById("task-inactive-hint");
+  const activateBtn = document.getElementById("btn-activate-task");
+  if (isInactiveTask(task)) {
+    inactiveToggle.checked = true;
+    inactiveToggle.disabled = true;
+    inactiveHint.textContent = "Task ist inaktiv. Fälligkeitsdatum erst bei Aktivierung setzen.";
+    activateBtn.classList.remove("d-none");
+  } else {
+    inactiveToggle.checked = false;
+    inactiveToggle.disabled = !!task.id;
+    inactiveHint.textContent = "Wartet auf externe Abhängigkeiten und ist weder fällig noch geplant.";
+    activateBtn.classList.add("d-none");
+  }
 
   const badge = document.getElementById("task-status-badge");
   badge.textContent =
     task.status === "todo" ? (isPlannedTask(task) ? "Geplant" : "ToDo") :
     task.status === "snooze" ? "Snooze" :
+    task.status === "inactive" ? "Inaktiv" :
     task.status === "done" ? "Done" :
     "Archiviert";
   badge.className =
     "badge rounded-pill " +
     (task.status === "todo" ? (isPlannedTask(task) ? "text-bg-secondary" : "text-bg-info") :
      task.status === "snooze" ? "text-bg-warning" :
+     task.status === "inactive" ? "text-bg-secondary" :
      task.status === "done" ? "text-bg-success" :
      "text-bg-secondary");
 
@@ -442,14 +509,15 @@ async function openTaskModalForEdit(task) {
   }
   document.getElementById("task-meta").textContent = metaParts.join(" • ");
 
-  if (task.status === "done") {
+  if (task.status === "done" || isInactiveTask(task)) {
     document.getElementById("btn-delete-task").classList.remove("d-none");
   }
 
   const reactivationBtn = document.getElementById("btn-reactivate-task");
   reactivationBtn.classList.toggle("d-none", !(task.status === "snooze" || task.status === "done"));
   const snoozeBtn = document.getElementById("btn-snooze-task");
-  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done";
+  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done" || isInactiveTask(task);
+  document.getElementById("btn-done-task").disabled = task.status === "done" || isInactiveTask(task);
 
   const isArchived = task.status === "archived";
   if (isArchived) {
@@ -498,6 +566,9 @@ async function onSaveTask(e) {
   const description = document.getElementById("task-description").value.trim();
   const dueDateValue = document.getElementById("task-due-date").value;
   const snoozeInput = document.getElementById("task-snooze-input");
+  const currentStatus = document.getElementById("task-current-status").value || "todo";
+  const inactiveToggle = document.getElementById("task-inactive-toggle");
+  const wantsInactive = inactiveToggle.checked || currentStatus === "inactive";
   const snoozeCount = allowSnoozeEdit
     ? Math.max(0, parseInt(snoozeInput.value, 10) || 0)
     : undefined;
@@ -511,8 +582,11 @@ async function onSaveTask(e) {
     let savedTask;
     if (!id) {
       const payload = { title, description };
-      if (dueDateValue) {
+      if (dueDateValue && !wantsInactive) {
         payload.dueDate = dueDateValue;
+      }
+      if (wantsInactive) {
+        payload.status = "INACTIVE";
       }
       if (allowSnoozeEdit) {
         payload.snoozeCount = snoozeCount;
@@ -522,6 +596,9 @@ async function onSaveTask(e) {
       const payload = { title, description };
       if (allowSnoozeEdit) {
         payload.snoozeCount = snoozeCount;
+      }
+      if (currentStatus === "inactive") {
+        payload.status = "INACTIVE";
       }
       savedTask = await updateTask(id, payload, { snoozeEdit: allowSnoozeEdit });
     }
@@ -650,6 +727,29 @@ async function onDoneTask() {
   } catch (e) {
     console.error(e);
     alert("Konnte Task nicht auf Done setzen.");
+  }
+}
+
+async function onActivateTask() {
+  const id = document.getElementById("task-id").value;
+  if (!id) {
+    alert("Task muss erst gespeichert werden, bevor er aktiviert werden kann.");
+    return;
+  }
+
+  const dueDateInput = document.getElementById("task-due-date");
+  let dueDateValue = dueDateInput.value;
+  if (!dueDateValue) {
+    dueDateValue = formatDateForInput(new Date());
+  }
+
+  try {
+    await updateTask(id, { status: "TODO", dueDate: dueDateValue });
+    taskModal.hide();
+    await loadTasks();
+  } catch (e) {
+    console.error(e);
+    alert("Konnte Task nicht aktivieren.");
   }
 }
 
