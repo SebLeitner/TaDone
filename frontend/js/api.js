@@ -38,18 +38,26 @@ export async function fetchTasks() {
 
 export async function createTask(task, { snoozeEdit = false } = {}) {
   const suffix = snoozeEdit ? "?snoozeEdit=1" : "";
+  const headers = { "Content-Type": "application/json" };
+  if (snoozeEdit) {
+    headers["X-Snooze-Edit"] = "1";
+  }
   return api(`/tasks${suffix}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(task)
   });
 }
 
 export async function updateTask(taskId, updates, { snoozeEdit = false } = {}) {
   const suffix = snoozeEdit ? "?snoozeEdit=1" : "";
+  const headers = { "Content-Type": "application/json" };
+  if (snoozeEdit) {
+    headers["X-Snooze-Edit"] = "1";
+  }
   return api(`/tasks/${encodeURIComponent(taskId)}${suffix}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(updates)
   });
 }
