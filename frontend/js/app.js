@@ -14,6 +14,9 @@ import {
 } from "./api.js";
 import { initAudioControls } from "./audio.js";
 
+const urlParams = new URLSearchParams(window.location.search);
+const allowSnoozeEdit = urlParams.has("snoozeEdit");
+
 let currentView = "todo";
 let allTasks = [];
 let currentAudioBlob = null;
@@ -80,6 +83,17 @@ function initUI() {
 
   // Modal
   taskModal = new bootstrap.Modal(document.getElementById("taskModal"));
+
+  if (allowSnoozeEdit) {
+    const wrapper = document.getElementById("task-snooze-edit-wrapper");
+    wrapper.classList.remove("d-none");
+
+    const input = document.getElementById("task-snooze-input");
+    input.addEventListener("input", () => {
+      const value = Math.max(0, parseInt(input.value, 10) || 0);
+      document.getElementById("task-snooze-count").textContent = value;
+    });
+  }
 
   const form = document.getElementById("task-form");
   form.addEventListener("submit", onSaveTask);
@@ -334,6 +348,11 @@ function resetTaskModal() {
   document.getElementById("task-due-date").value = "";
   document.getElementById("task-due-date").disabled = false;
   document.getElementById("task-snooze-count").textContent = "0";
+  const snoozeInput = document.getElementById("task-snooze-input");
+  if (snoozeInput) {
+    snoozeInput.value = 0;
+    snoozeInput.disabled = false;
+  }
   document.getElementById("task-status-badge").textContent = "ToDo";
   document.getElementById("task-status-badge").className = "badge rounded-pill text-bg-info";
   document.getElementById("task-meta").textContent = "";
@@ -378,6 +397,10 @@ async function openTaskModalForEdit(task) {
   document.getElementById("task-title").value = task.title;
   document.getElementById("task-description").value = task.description || "";
   document.getElementById("task-snooze-count").textContent = task.snoozeCount || 0;
+  const snoozeInput = document.getElementById("task-snooze-input");
+  if (allowSnoozeEdit && snoozeInput) {
+    snoozeInput.value = task.snoozeCount || 0;
+  }
   const dueDateInput = document.getElementById("task-due-date");
   if (task.dueDate) {
     dueDateInput.value = formatDateForInput(task.dueDate);
@@ -437,6 +460,9 @@ async function openTaskModalForEdit(task) {
     reactivationBtn.classList.add("d-none");
     document.getElementById("btn-audio-transcribe").disabled = true;
     document.getElementById("btn-audio-record").disabled = true;
+    if (allowSnoozeEdit && snoozeInput) {
+      snoozeInput.disabled = true;
+    }
   }
 
   // Bestehendes Audio anzeigen
@@ -471,6 +497,10 @@ async function onSaveTask(e) {
   const title = document.getElementById("task-title").value.trim();
   const description = document.getElementById("task-description").value.trim();
   const dueDateValue = document.getElementById("task-due-date").value;
+  const snoozeInput = document.getElementById("task-snooze-input");
+  const snoozeCount = allowSnoozeEdit
+    ? Math.max(0, parseInt(snoozeInput.value, 10) || 0)
+    : undefined;
 
   if (!title) {
     alert("Titel ist erforderlich.");
@@ -484,9 +514,16 @@ async function onSaveTask(e) {
       if (dueDateValue) {
         payload.dueDate = dueDateValue;
       }
+      if (allowSnoozeEdit) {
+        payload.snoozeCount = snoozeCount;
+      }
       savedTask = await createTask(payload);
     } else {
-      savedTask = await updateTask(id, { title, description });
+      const payload = { title, description };
+      if (allowSnoozeEdit) {
+        payload.snoozeCount = snoozeCount;
+      }
+      savedTask = await updateTask(id, payload);
     }
 
     // Audio optional hochladen
