@@ -36,6 +36,15 @@ function getUserId(event) {
   return event.requestContext?.authorizer?.jwt?.claims?.sub;
 }
 
+function hasSnoozeEditFlag(event) {
+  const qs = event.queryStringParameters || {};
+  if (Object.prototype.hasOwnProperty.call(qs || {}, "snoozeEdit")) {
+    return true;
+  }
+  const headers = event.headers || {};
+  return Object.keys(headers).some(h => h.toLowerCase() === "x-snooze-edit");
+}
+
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
@@ -271,7 +280,7 @@ exports.handler = async (event) => {
     // POST /tasks
     // =======================
     if (method === "POST" && path === "/tasks") {
-      const allowSnoozeEdit = !!event.queryStringParameters?.snoozeEdit;
+      const allowSnoozeEdit = hasSnoozeEditFlag(event);
       const body = JSON.parse(event.body || "{}");
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
@@ -325,7 +334,7 @@ exports.handler = async (event) => {
     // PUT /tasks/{id}
     // =======================
     if (method === "PUT" && path.startsWith("/tasks/") && !path.endsWith("/audio")) {
-      const allowSnoozeEdit = !!event.queryStringParameters?.snoozeEdit;
+      const allowSnoozeEdit = hasSnoozeEditFlag(event);
       const taskId = path.split("/")[2];
       const body = JSON.parse(event.body || "{}");
 
