@@ -107,9 +107,17 @@ async function autoSnoozeOverdue(userId, tasks) {
 
   for (const t of tasks) {
     if (t.status === "TODO") {
-      const plannedInFuture =
-        t.dueDate && new Date(t.dueDate).toISOString() > todayStart;
-      if (plannedInFuture) continue;
+      if (t.dueDate) {
+        const due = new Date(t.dueDate);
+        const dueDayStart = new Date(
+          due.getFullYear(),
+          due.getMonth(),
+          due.getDate()
+        ).toISOString();
+
+        // Geplante Aufgaben (auch am Fälligkeitstag) nicht automatisch snoozen
+        if (dueDayStart >= todayStart) continue;
+      }
 
       const lastTouch = t.updatedAt || t.createdAt;
       if (lastTouch && lastTouch < todayStart) {
