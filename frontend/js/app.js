@@ -71,7 +71,8 @@ function initUI() {
       btn.classList.add("active");
       document.getElementById("current-view-label").textContent =
         currentView === "todo" ? "ToDo" :
-        currentView === "snooze" ? "Snooze" : "Done";
+        currentView === "snooze" ? "Snooze" :
+        currentView === "done" ? "Done" : "Inaktiv";
       renderTaskList();
     });
   });
@@ -89,9 +90,27 @@ function initUI() {
     dueDateInput.min = formatDateForInput(new Date());
   }
 
+  const inactiveToggle = document.getElementById("task-inactive-toggle");
+  if (inactiveToggle) {
+    inactiveToggle.addEventListener("change", () => {
+      const dueInput = document.getElementById("task-due-date");
+      if (!dueInput) return;
+      if (inactiveToggle.checked) {
+        dueInput.value = "";
+        dueInput.disabled = true;
+      } else {
+        dueInput.disabled = false;
+        if (!dueInput.value) {
+          dueInput.value = formatDateForInput(startOfToday());
+        }
+      }
+    });
+  }
+
   document.getElementById("btn-snooze-task").addEventListener("click", onSnoozeTask);
   document.getElementById("btn-done-task").addEventListener("click", onDoneTask);
   document.getElementById("btn-reactivate-task").addEventListener("click", onReactivateTask);
+  document.getElementById("btn-activate-task").addEventListener("click", onActivateTask);
   document.getElementById("btn-delete-task").addEventListener("click", onDeleteTask);
   document.getElementById("btn-audio-transcribe").addEventListener("click", onTranscribeAudio);
 
@@ -191,6 +210,9 @@ function createTaskListItem(task) {
     const archived = new Date(task.archivedAt);
     metaParts.push(`archiviert: ${archived.toLocaleDateString()}`);
   }
+  if (task.status === "inactive") {
+    metaParts.push("wartet auf externe Abhängigkeiten");
+  }
   meta.textContent = metaParts.join(" • ");
   left.appendChild(meta);
 
@@ -207,7 +229,9 @@ function createTaskListItem(task) {
         ? "text-bg-warning"
         : task.status === "done"
           ? "text-bg-success"
-          : "text-bg-secondary");
+          : task.status === "inactive"
+            ? "text-bg-dark"
+            : "text-bg-secondary");
   statusBadge.textContent =
     task.status === "todo"
       ? planned ? "Geplant" : "ToDo"
@@ -215,7 +239,9 @@ function createTaskListItem(task) {
         ? "Snooze"
         : task.status === "done"
           ? "Done"
-          : "Archiviert";
+          : task.status === "inactive"
+            ? "Inaktiv"
+            : "Archiviert";
   right.appendChild(statusBadge);
 
   const snoozeBadge = document.createElement("div");
@@ -284,6 +310,28 @@ function renderTaskList() {
     return;
   }
 
+  if (currentView === "inactive") {
+    const inactive = allTasks
+      .filter(t => t.status === "inactive")
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    if (!inactive.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-center text-muted py-4";
+      empty.textContent = "Keine wartenden Tasks.";
+      container.appendChild(empty);
+      return;
+    }
+
+    const hint = document.createElement("div");
+    hint.className = "text-center text-secondary small py-2";
+    hint.textContent = "Diese Aufgaben warten auf externe Abhängigkeiten. Aktivieren und Fälligkeitsdatum setzen, sobald es weitergehen kann.";
+    container.appendChild(hint);
+
+    renderSection(container, "", inactive);
+    return;
+  }
+
   if (currentView === "snooze") {
     const tasks = allTasks
       .filter(t => t.status === "snooze")
@@ -333,6 +381,8 @@ function resetTaskModal() {
   document.getElementById("task-description").disabled = false;
   document.getElementById("task-due-date").value = "";
   document.getElementById("task-due-date").disabled = false;
+  document.getElementById("task-inactive-toggle").checked = false;
+  document.getElementById("task-inactive-toggle").disabled = false;
   document.getElementById("task-snooze-count").textContent = "0";
   document.getElementById("task-status-badge").textContent = "ToDo";
   document.getElementById("task-status-badge").className = "badge rounded-pill text-bg-info";
@@ -382,19 +432,32 @@ async function openTaskModalForEdit(task) {
   if (task.dueDate) {
     dueDateInput.value = formatDateForInput(task.dueDate);
   }
-  dueDateInput.disabled = true;
+  if (task.status === "inactive") {
+    if (!task.dueDate) {
+      dueDateInput.value = formatDateForInput(startOfToday());
+    }
+    dueDateInput.disabled = false;
+  } else {
+    dueDateInput.disabled = true;
+  }
+
+  const inactiveToggle = document.getElementById("task-inactive-toggle");
+  inactiveToggle.checked = task.status === "inactive";
+  inactiveToggle.disabled = true;
 
   const badge = document.getElementById("task-status-badge");
   badge.textContent =
     task.status === "todo" ? (isPlannedTask(task) ? "Geplant" : "ToDo") :
     task.status === "snooze" ? "Snooze" :
     task.status === "done" ? "Done" :
+    task.status === "inactive" ? "Inaktiv" :
     "Archiviert";
   badge.className =
     "badge rounded-pill " +
     (task.status === "todo" ? (isPlannedTask(task) ? "text-bg-secondary" : "text-bg-info") :
      task.status === "snooze" ? "text-bg-warning" :
      task.status === "done" ? "text-bg-success" :
+     task.status === "inactive" ? "text-bg-dark" :
      "text-bg-secondary");
 
   const created = new Date(task.createdAt);
@@ -425,8 +488,14 @@ async function openTaskModalForEdit(task) {
 
   const reactivationBtn = document.getElementById("btn-reactivate-task");
   reactivationBtn.classList.toggle("d-none", !(task.status === "snooze" || task.status === "done"));
+  const activateBtn = document.getElementById("btn-activate-task");
+  activateBtn.classList.toggle("d-none", task.status !== "inactive");
   const snoozeBtn = document.getElementById("btn-snooze-task");
-  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done";
+  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done" || task.status === "inactive";
+  snoozeBtn.classList.toggle("d-none", task.status === "inactive");
+  const doneBtn = document.getElementById("btn-done-task");
+  doneBtn.disabled = task.status === "inactive";
+  doneBtn.classList.toggle("d-none", task.status === "inactive");
 
   const isArchived = task.status === "archived";
   if (isArchived) {
@@ -471,6 +540,7 @@ async function onSaveTask(e) {
   const title = document.getElementById("task-title").value.trim();
   const description = document.getElementById("task-description").value.trim();
   const dueDateValue = document.getElementById("task-due-date").value;
+  const inactiveChecked = document.getElementById("task-inactive-toggle").checked;
 
   if (!title) {
     alert("Titel ist erforderlich.");
@@ -481,12 +551,23 @@ async function onSaveTask(e) {
     let savedTask;
     if (!id) {
       const payload = { title, description };
-      if (dueDateValue) {
+      if (dueDateValue && !inactiveChecked) {
         payload.dueDate = dueDateValue;
+      }
+      if (inactiveChecked) {
+        payload.status = "INACTIVE";
       }
       savedTask = await createTask(payload);
     } else {
-      savedTask = await updateTask(id, { title, description });
+      const payload = { title, description };
+      const dueDateInput = document.getElementById("task-due-date");
+      if (dueDateInput && !dueDateInput.disabled) {
+        payload.dueDate = dueDateValue || null;
+      }
+      if (inactiveChecked) {
+        payload.status = "INACTIVE";
+      }
+      savedTask = await updateTask(id, payload);
     }
 
     // Audio optional hochladen
@@ -585,6 +666,10 @@ async function onSnoozeTask() {
     alert("Erledigte Tasks können nicht gesnoozed werden.");
     return;
   }
+  if (task && task.status === "inactive") {
+    alert("Inaktive Tasks müssen zuerst aktiviert werden.");
+    return;
+  }
   if (task && isPlannedTask(task)) {
     alert("Geplante Aufgaben können erst am Fälligkeitstag gesnoozed werden.");
     return;
@@ -629,6 +714,25 @@ async function onReactivateTask() {
   } catch (e) {
     console.error(e);
     alert("Konnte Task nicht reaktivieren.");
+  }
+}
+
+async function onActivateTask() {
+  const id = document.getElementById("task-id").value;
+  if (!id) {
+    alert("Task muss erst gespeichert werden, bevor er aktiviert werden kann.");
+    return;
+  }
+
+  const dueDateValue = document.getElementById("task-due-date").value || formatDateForInput(startOfToday());
+
+  try {
+    await updateTask(id, { status: "TODO", dueDate: dueDateValue });
+    taskModal.hide();
+    await loadTasks();
+  } catch (e) {
+    console.error(e);
+    alert("Konnte Task nicht aktivieren.");
   }
 }
 
