@@ -36,16 +36,18 @@ export async function fetchTasks() {
   return api("/tasks", { method: "GET" });
 }
 
-export async function createTask(task) {
-  return api("/tasks", {
+export async function createTask(task, { snoozeEdit = false } = {}) {
+  const suffix = snoozeEdit ? "?snoozeEdit=1" : "";
+  return api(`/tasks${suffix}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(task)
   });
 }
 
-export async function updateTask(taskId, updates) {
-  return api(`/tasks/${encodeURIComponent(taskId)}`, {
+export async function updateTask(taskId, updates, { snoozeEdit = false } = {}) {
+  const suffix = snoozeEdit ? "?snoozeEdit=1" : "";
+  return api(`/tasks/${encodeURIComponent(taskId)}${suffix}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates)

@@ -271,6 +271,7 @@ exports.handler = async (event) => {
     // POST /tasks
     // =======================
     if (method === "POST" && path === "/tasks") {
+      const allowSnoozeEdit = !!event.queryStringParameters?.snoozeEdit;
       const body = JSON.parse(event.body || "{}");
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
@@ -288,6 +289,10 @@ exports.handler = async (event) => {
         ).toISOString();
       }
 
+      if (body.snoozeCount !== undefined && !allowSnoozeEdit) {
+        return json(400, { error: "Snooze count editing not allowed" });
+      }
+
       const item = {
         userId,
         taskId: id,
@@ -296,7 +301,9 @@ exports.handler = async (event) => {
         status: "TODO",
         createdAt: now,
         updatedAt: now,
-        snoozeCount: 0,
+        snoozeCount: allowSnoozeEdit
+          ? Math.max(0, Number(body.snoozeCount ?? 0))
+          : 0,
         snoozedUntil: null,
         audioKey: null,
         dueDate,
@@ -318,6 +325,7 @@ exports.handler = async (event) => {
     // PUT /tasks/{id}
     // =======================
     if (method === "PUT" && path.startsWith("/tasks/") && !path.endsWith("/audio")) {
+      const allowSnoozeEdit = !!event.queryStringParameters?.snoozeEdit;
       const taskId = path.split("/")[2];
       const body = JSON.parse(event.body || "{}");
 
@@ -341,6 +349,13 @@ exports.handler = async (event) => {
         exp.push("#d = :d");
         names["#d"] = "description";
         vals[":d"] = body.description;
+      }
+      if (body.snoozeCount !== undefined) {
+        if (!allowSnoozeEdit) {
+          return json(400, { error: "Snooze count editing not allowed" });
+        }
+        exp.push("snoozeCount = :sc");
+        vals[":sc"] = Math.max(0, Number(body.snoozeCount || 0));
       }
 
       exp.push("updatedAt = :u");

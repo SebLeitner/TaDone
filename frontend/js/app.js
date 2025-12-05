@@ -517,13 +517,13 @@ async function onSaveTask(e) {
       if (allowSnoozeEdit) {
         payload.snoozeCount = snoozeCount;
       }
-      savedTask = await createTask(payload);
+      savedTask = await createTask(payload, { snoozeEdit: allowSnoozeEdit });
     } else {
       const payload = { title, description };
       if (allowSnoozeEdit) {
         payload.snoozeCount = snoozeCount;
       }
-      savedTask = await updateTask(id, payload);
+      savedTask = await updateTask(id, payload, { snoozeEdit: allowSnoozeEdit });
     }
 
     // Audio optional hochladen
