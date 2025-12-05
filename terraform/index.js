@@ -69,6 +69,8 @@ function startOfToday() {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 }
 
+const ALLOWED_STATUSES = ["TODO", "SNOOZE", "DONE", "ARCHIVED", "INACTIVE"];
+
 async function autoUnsnooze(userId, tasks) {
   const now = new Date().toISOString();
 
@@ -288,12 +290,17 @@ exports.handler = async (event) => {
         ).toISOString();
       }
 
+      let status = (body.status || "TODO").toUpperCase();
+      if (!ALLOWED_STATUSES.includes(status)) {
+        return json(400, { error: "Invalid status" });
+      }
+
       const item = {
         userId,
         taskId: id,
         title: body.title,
         description: body.description,
-        status: "TODO",
+        status,
         createdAt: now,
         updatedAt: now,
         snoozeCount: 0,
@@ -321,16 +328,21 @@ exports.handler = async (event) => {
       const taskId = path.split("/")[2];
       const body = JSON.parse(event.body || "{}");
 
-      if (body.dueDate !== undefined) {
-        return json(400, { error: "Due date can only be set on creation" });
-      }
-
       const now = new Date().toISOString();
 
       // robust optional fields
       const exp = [];
       const names = { "#s": "status" };
       const vals = { ":arch": "ARCHIVED" };
+
+      if (body.status !== undefined) {
+        const nextStatus = String(body.status).toUpperCase();
+        if (!ALLOWED_STATUSES.includes(nextStatus)) {
+          return json(400, { error: "Invalid status" });
+        }
+        exp.push("#s = :s");
+        vals[":s"] = nextStatus;
+      }
 
       if (body.title !== undefined) {
         exp.push("#t = :t");
@@ -341,6 +353,25 @@ exports.handler = async (event) => {
         exp.push("#d = :d");
         names["#d"] = "description";
         vals[":d"] = body.description;
+      }
+
+      if (body.dueDate !== undefined) {
+        if (body.dueDate === null) {
+          exp.push("dueDate = :null");
+          vals[":null"] = null;
+        } else {
+          const parsed = new Date(body.dueDate);
+          if (isNaN(parsed.getTime())) {
+            return json(400, { error: "Invalid dueDate" });
+          }
+          const normalizedDue = new Date(
+            parsed.getFullYear(),
+            parsed.getMonth(),
+            parsed.getDate()
+          ).toISOString();
+          exp.push("dueDate = :due");
+          vals[":due"] = normalizedDue;
+        }
       }
 
       exp.push("updatedAt = :u");
