@@ -426,7 +426,7 @@ async function openTaskModalForEdit(task) {
   const reactivationBtn = document.getElementById("btn-reactivate-task");
   reactivationBtn.classList.toggle("d-none", !(task.status === "snooze" || task.status === "done"));
   const snoozeBtn = document.getElementById("btn-snooze-task");
-  snoozeBtn.disabled = isPlannedTask(task);
+  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done";
 
   const isArchived = task.status === "archived";
   if (isArchived) {
@@ -581,6 +581,10 @@ async function onSnoozeTask() {
     return;
   }
   const task = allTasks.find(t => t.id === id);
+  if (task && task.status === "done") {
+    alert("Erledigte Tasks können nicht gesnoozed werden.");
+    return;
+  }
   if (task && isPlannedTask(task)) {
     alert("Geplante Aufgaben können erst am Fälligkeitstag gesnoozed werden.");
     return;
