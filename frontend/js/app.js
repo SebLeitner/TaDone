@@ -36,6 +36,20 @@ function isPlannedTask(task) {
   return dueLocal > startOfToday();
 }
 
+function isHabitTask(task) {
+  const type = (task.type || "").toLowerCase();
+  const status = (task.status || "").toLowerCase();
+  return !!(
+    task.isHabit ||
+    task.habitId ||
+    type.includes("habit") ||
+    status === "habit" ||
+    status === "daily" ||
+    type === "daily" ||
+    type === "daily_habit"
+  );
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   await ensureAuthenticated();
   initUI();
@@ -71,6 +85,7 @@ function initUI() {
       btn.classList.add("active");
       document.getElementById("current-view-label").textContent =
         currentView === "todo" ? "ToDo" :
+        currentView === "habits" ? "Daily Habits" :
         currentView === "snooze" ? "Snooze" :
         currentView === "done" ? "Done" : "Inaktiv";
       renderTaskList();
@@ -159,7 +174,9 @@ function normalizeTasks(list) {
     doneAt: t.doneAt || null,
     archivedAt: t.archivedAt || null,
     hasAudio: !!t.audioKey,
-    audioKey: t.audioKey || null
+    audioKey: t.audioKey || null,
+    type: (t.type || t.taskType || t.category || t.kind || "").toLowerCase(),
+    isHabit: !!(t.isHabit || t.habit || t.habitId)
   }));
 }
 
@@ -168,6 +185,8 @@ function createTaskListItem(task) {
   const item = document.createElement("button");
   item.type = "button";
   item.className = "list-group-item list-group-item-action d-flex justify-content-between align-items-start";
+
+  const habit = isHabitTask(task);
 
   const left = document.createElement("div");
   left.className = "me-3 flex-grow-1";
@@ -221,9 +240,9 @@ function createTaskListItem(task) {
 
   const statusBadge = document.createElement("div");
   const planned = isPlannedTask(task);
-  statusBadge.className =
-    "badge rounded-pill " +
-    (task.status === "todo"
+  const statusClass = habit
+    ? "text-bg-primary"
+    : task.status === "todo"
       ? planned ? "text-bg-secondary" : "text-bg-info"
       : task.status === "snooze"
         ? "text-bg-warning"
@@ -231,9 +250,10 @@ function createTaskListItem(task) {
           ? "text-bg-success"
           : task.status === "inactive"
             ? "text-bg-dark"
-            : "text-bg-secondary");
-  statusBadge.textContent =
-    task.status === "todo"
+            : "text-bg-secondary";
+  const statusLabel = habit
+    ? "Daily Habit"
+    : task.status === "todo"
       ? planned ? "Geplant" : "ToDo"
       : task.status === "snooze"
         ? "Snooze"
@@ -242,6 +262,8 @@ function createTaskListItem(task) {
           : task.status === "inactive"
             ? "Inaktiv"
             : "Archiviert";
+  statusBadge.className = "badge rounded-pill " + statusClass;
+  statusBadge.textContent = statusLabel;
   right.appendChild(statusBadge);
 
   const snoozeBadge = document.createElement("div");
@@ -281,7 +303,7 @@ function renderTaskList() {
   container.innerHTML = "";
 
   if (currentView === "todo") {
-    const todos = allTasks.filter(t => t.status === "todo");
+    const todos = allTasks.filter(t => t.status === "todo" && !isHabitTask(t));
     const planned = todos
       .filter(isPlannedTask)
       .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
@@ -310,9 +332,35 @@ function renderTaskList() {
     return;
   }
 
+  if (currentView === "habits") {
+    const habits = allTasks
+      .filter(isHabitTask)
+      .sort((a, b) => a.title.localeCompare(b.title, "de"));
+
+    if (!habits.length) {
+      const empty = document.createElement("div");
+      empty.className = "text-center text-muted py-4";
+      empty.textContent = "Keine Daily Habits vorhanden.";
+      container.appendChild(empty);
+      return;
+    }
+
+    const activeHabits = habits.filter(h => h.status !== "done" && h.status !== "archived");
+    const finishedHabits = habits.filter(h => h.status === "done" || h.status === "archived");
+
+    if (activeHabits.length) {
+      renderSection(container, finishedHabits.length ? "Aktive Habits" : "", activeHabits);
+    }
+
+    if (finishedHabits.length) {
+      renderSection(container, activeHabits.length ? "Abgeschlossen/Archiviert" : "", finishedHabits);
+    }
+    return;
+  }
+
   if (currentView === "inactive") {
     const inactive = allTasks
-      .filter(t => t.status === "inactive")
+      .filter(t => t.status === "inactive" && !isHabitTask(t))
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
     if (!inactive.length) {
@@ -334,7 +382,7 @@ function renderTaskList() {
 
   if (currentView === "snooze") {
     const tasks = allTasks
-      .filter(t => t.status === "snooze")
+      .filter(t => t.status === "snooze" && !isHabitTask(t))
       .sort((a, b) => new Date(a.snoozedUntil || a.createdAt) - new Date(b.snoozedUntil || b.createdAt));
 
     if (!tasks.length) {
@@ -350,10 +398,10 @@ function renderTaskList() {
   }
 
   const doneTasks = allTasks
-    .filter(t => t.status === "done")
+    .filter(t => t.status === "done" && !isHabitTask(t))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const archivedTasks = allTasks
-    .filter(t => t.status === "archived")
+    .filter(t => t.status === "archived" && !isHabitTask(t))
     .sort((a, b) => new Date(b.archivedAt || b.updatedAt || b.createdAt) - new Date(a.archivedAt || a.updatedAt || a.createdAt));
 
   if (!doneTasks.length && !archivedTasks.length) {
@@ -432,6 +480,7 @@ async function openTaskModalForEdit(task) {
   if (task.dueDate) {
     dueDateInput.value = formatDateForInput(task.dueDate);
   }
+  const habit = isHabitTask(task);
   if (task.status === "inactive") {
     if (!task.dueDate) {
       dueDateInput.value = formatDateForInput(startOfToday());
@@ -447,6 +496,7 @@ async function openTaskModalForEdit(task) {
 
   const badge = document.getElementById("task-status-badge");
   badge.textContent =
+    habit ? "Daily Habit" :
     task.status === "todo" ? (isPlannedTask(task) ? "Geplant" : "ToDo") :
     task.status === "snooze" ? "Snooze" :
     task.status === "done" ? "Done" :
@@ -454,7 +504,8 @@ async function openTaskModalForEdit(task) {
     "Archiviert";
   badge.className =
     "badge rounded-pill " +
-    (task.status === "todo" ? (isPlannedTask(task) ? "text-bg-secondary" : "text-bg-info") :
+    (habit ? "text-bg-primary" :
+     task.status === "todo" ? (isPlannedTask(task) ? "text-bg-secondary" : "text-bg-info") :
      task.status === "snooze" ? "text-bg-warning" :
      task.status === "done" ? "text-bg-success" :
      task.status === "inactive" ? "text-bg-dark" :
