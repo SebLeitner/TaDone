@@ -18,6 +18,13 @@ let currentView = "todo";
 let allTasks = [];
 let currentAudioBlob = null;
 let taskModal = null;
+const EDITABLE_WINDOW_MS = 15 * 60 * 1000;
+
+function isWithinEditableWindow(task) {
+  if (!task || !task.createdAt) return true;
+  const created = new Date(task.createdAt).getTime();
+  return Date.now() - created < EDITABLE_WINDOW_MS;
+}
 
 function startOfToday() {
   const now = new Date();
@@ -428,6 +435,18 @@ async function openTaskModalForEdit(task) {
   document.getElementById("task-title").value = task.title;
   document.getElementById("task-description").value = task.description || "";
   document.getElementById("task-snooze-count").textContent = task.snoozeCount || 0;
+  const isEditableWindow = isWithinEditableWindow(task);
+  const titleInput = document.getElementById("task-title");
+  const descriptionInput = document.getElementById("task-description");
+  const saveBtn = document.querySelector('#taskModal button[type="submit"][form="task-form"]');
+  if (saveBtn) {
+    saveBtn.disabled = !isEditableWindow;
+    saveBtn.title = isEditableWindow
+      ? "Du kannst den Task noch bearbeiten."
+      : "Bearbeitung nur innerhalb der ersten 15 Minuten nach Erstellung möglich.";
+  }
+  titleInput.disabled = !isEditableWindow;
+  descriptionInput.disabled = !isEditableWindow;
   const dueDateInput = document.getElementById("task-due-date");
   if (task.dueDate) {
     dueDateInput.value = formatDateForInput(task.dueDate);
@@ -436,6 +455,8 @@ async function openTaskModalForEdit(task) {
     if (!task.dueDate) {
       dueDateInput.value = formatDateForInput(startOfToday());
     }
+    dueDateInput.disabled = false;
+  } else if (isEditableWindow) {
     dueDateInput.disabled = false;
   } else {
     dueDateInput.disabled = true;
@@ -467,6 +488,12 @@ async function openTaskModalForEdit(task) {
   ];
   if (updated) {
     metaParts.push(`geändert: ${updated.toLocaleDateString()}`);
+  }
+  if (isEditableWindow) {
+    const editableUntil = new Date(created.getTime() + EDITABLE_WINDOW_MS);
+    metaParts.push(`bearbeitbar bis: ${editableUntil.toLocaleTimeString().slice(0, 5)}`);
+  } else {
+    metaParts.push("Bearbeitung nach 15 Minuten gesperrt.");
   }
   if (task.dueDate) {
     const due = new Date(task.dueDate);
@@ -541,6 +568,7 @@ async function onSaveTask(e) {
   const description = document.getElementById("task-description").value.trim();
   const dueDateValue = document.getElementById("task-due-date").value;
   const inactiveChecked = document.getElementById("task-inactive-toggle").checked;
+  const existingTask = id ? allTasks.find(t => t.id === id) : null;
 
   // Safety net: reflect the inactive choice directly in the modal badge so the
   // user can immediately see which status will be sent to the backend.
@@ -552,6 +580,11 @@ async function onSaveTask(e) {
 
   if (!title) {
     alert("Titel ist erforderlich.");
+    return;
+  }
+
+  if (existingTask && !isWithinEditableWindow(existingTask)) {
+    alert("Tasks können nur in den ersten 15 Minuten nach der Erstellung bearbeitet werden.");
     return;
   }
 
@@ -605,10 +638,16 @@ async function onTranscribeAudio() {
   const taskIdInput = document.getElementById("task-id");
   const dueDateValue = document.getElementById("task-due-date").value;
   const inactiveChecked = document.getElementById("task-inactive-toggle").checked;
+  const existingTask = taskIdInput.value ? allTasks.find(t => t.id === taskIdInput.value) : null;
 
   const hasAudio = currentAudioBlob || audioPlayer.src;
   if (!hasAudio) {
     alert("Keine Audioaufnahme vorhanden.");
+    return;
+  }
+
+  if (existingTask && !isWithinEditableWindow(existingTask)) {
+    alert("Tasks können nur in den ersten 15 Minuten nach der Erstellung bearbeitet werden.");
     return;
   }
 
