@@ -359,25 +359,16 @@ function renderTaskList() {
   const doneTasks = allTasks
     .filter(t => t.status === "done")
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const archivedTasks = allTasks
-    .filter(t => t.status === "archived")
-    .sort((a, b) => new Date(b.archivedAt || b.updatedAt || b.createdAt) - new Date(a.archivedAt || a.updatedAt || a.createdAt));
 
-  if (!doneTasks.length && !archivedTasks.length) {
+  if (!doneTasks.length) {
     const empty = document.createElement("div");
     empty.className = "text-center text-muted py-4";
-    empty.textContent = "Keine erledigten oder archivierten Tasks.";
+    empty.textContent = "Keine erledigten Tasks im Log. Hier feiern wir nur Erfolge.";
     container.appendChild(empty);
     return;
   }
 
-  if (doneTasks.length) {
-    renderSection(container, archivedTasks.length ? "Done" : "", doneTasks);
-  }
-
-  if (archivedTasks.length) {
-    renderSection(container, doneTasks.length ? "Archiviert" : "", archivedTasks);
-  }
+  renderSection(container, "Done", doneTasks);
 }
 
 function resetTaskModal() {
