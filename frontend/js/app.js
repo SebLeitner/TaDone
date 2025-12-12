@@ -18,6 +18,7 @@ let currentView = "todo";
 let allTasks = [];
 let currentAudioBlob = null;
 let taskModal = null;
+let currentChecklistItems = [];
 const EDITABLE_WINDOW_MS = 15 * 60 * 1000;
 
 function isWithinEditableWindow(task) {
@@ -41,6 +42,69 @@ function isPlannedTask(task) {
   const due = new Date(task.dueDate);
   const dueLocal = new Date(due.getFullYear(), due.getMonth(), due.getDate());
   return dueLocal > startOfToday();
+}
+
+function isChecklistTask(task) {
+  return task.status === "todo" && !task.dueDate;
+}
+
+function renderChecklistItems() {
+  const list = document.getElementById("checklist-items");
+  if (!list) return;
+  list.innerHTML = "";
+
+  if (!currentChecklistItems.length) {
+    const empty = document.createElement("div");
+    empty.className = "text-muted small px-2 py-2";
+    empty.textContent = "Noch keine Punkte vorhanden.";
+    list.appendChild(empty);
+    return;
+  }
+
+  currentChecklistItems.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "list-group-item d-flex align-items-center gap-2 bg-body-secondary";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "form-check-input me-1";
+    checkbox.checked = !!item.done;
+    checkbox.addEventListener("change", () => {
+      currentChecklistItems[index].done = checkbox.checked;
+      renderChecklistItems();
+    });
+    row.appendChild(checkbox);
+
+    const label = document.createElement("span");
+    label.className = "flex-grow-1";
+    label.textContent = item.text;
+    if (item.done) {
+      label.classList.add("text-decoration-line-through", "text-muted");
+    }
+    row.appendChild(label);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "btn btn-sm btn-outline-secondary checklist-remove-btn";
+    removeBtn.innerHTML = '<i class="bi bi-x"></i>';
+    removeBtn.addEventListener("click", () => {
+      currentChecklistItems.splice(index, 1);
+      renderChecklistItems();
+    });
+    row.appendChild(removeBtn);
+
+    list.appendChild(row);
+  });
+}
+
+function addChecklistItem() {
+  const input = document.getElementById("checklist-item-input");
+  if (!input) return;
+  const text = (input.value || "").trim();
+  if (!text) return;
+  currentChecklistItems.push({ text, done: false });
+  input.value = "";
+  renderChecklistItems();
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -107,9 +171,20 @@ function initUI() {
         dueInput.disabled = true;
       } else {
         dueInput.disabled = false;
-        if (!dueInput.value) {
-          dueInput.value = formatDateForInput(startOfToday());
-        }
+      }
+    });
+  }
+
+  const addChecklistBtn = document.getElementById("btn-add-checklist-item");
+  if (addChecklistBtn) {
+    addChecklistBtn.addEventListener("click", addChecklistItem);
+  }
+  const checklistInput = document.getElementById("checklist-item-input");
+  if (checklistInput) {
+    checklistInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addChecklistItem();
       }
     });
   }
@@ -165,6 +240,7 @@ function normalizeTasks(list) {
     snoozedUntil: t.snoozedUntil || null,
     doneAt: t.doneAt || null,
     archivedAt: t.archivedAt || null,
+    checklist: Array.isArray(t.checklist) ? t.checklist : [],
     hasAudio: !!t.audioKey,
     audioKey: t.audioKey || null
   }));
@@ -178,6 +254,7 @@ function createTaskListItem(task) {
 
   const left = document.createElement("div");
   left.className = "me-3 flex-grow-1";
+  const isChecklist = !task.dueDate;
 
   const title = document.createElement("div");
   title.className = "fw-semibold";
@@ -199,6 +276,10 @@ function createTaskListItem(task) {
   const metaParts = [];
   const created = new Date(task.createdAt);
   metaParts.push(`angelegt: ${created.toLocaleDateString()} ${created.toLocaleTimeString().slice(0, 5)}`);
+
+  if (isChecklist) {
+    metaParts.push("Checkliste");
+  }
 
   if (task.dueDate) {
     const due = new Date(task.dueDate);
@@ -231,7 +312,7 @@ function createTaskListItem(task) {
   statusBadge.className =
     "badge rounded-pill " +
     (task.status === "todo"
-      ? planned ? "text-bg-secondary" : "text-bg-info"
+      ? planned ? "text-bg-secondary" : (isChecklist ? "text-bg-primary" : "text-bg-info")
       : task.status === "snooze"
         ? "text-bg-warning"
         : task.status === "done"
@@ -241,7 +322,7 @@ function createTaskListItem(task) {
             : "text-bg-secondary");
   statusBadge.textContent =
     task.status === "todo"
-      ? planned ? "Geplant" : "ToDo"
+      ? planned ? "Geplant" : (isChecklist ? "Checkliste" : "ToDo")
       : task.status === "snooze"
         ? "Snooze"
         : task.status === "done"
@@ -255,6 +336,14 @@ function createTaskListItem(task) {
   snoozeBadge.className = "small text-warning mt-1";
   snoozeBadge.textContent = `Snoozes: ${task.snoozeCount || 0}`;
   right.appendChild(snoozeBadge);
+
+  if (task.checklist && task.checklist.length) {
+    const doneCount = task.checklist.filter(i => i.done).length;
+    const checklistBadge = document.createElement("div");
+    checklistBadge.className = "small text-info mt-1";
+    checklistBadge.innerHTML = `<i class="bi bi-ui-checks-grid me-1"></i>${doneCount}/${task.checklist.length} erledigt`;
+    right.appendChild(checklistBadge);
+  }
 
   if (task.hasAudio) {
     const audioIcon = document.createElement("div");
@@ -289,14 +378,17 @@ function renderTaskList() {
 
   if (currentView === "todo") {
     const todos = allTasks.filter(t => t.status === "todo");
+    const checklists = todos
+      .filter(isChecklistTask)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
     const planned = todos
       .filter(isPlannedTask)
       .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
     const active = todos
-      .filter(t => !isPlannedTask(t))
+      .filter(t => !isPlannedTask(t) && t.dueDate)
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-    if (!planned.length && !active.length) {
+    if (!planned.length && !active.length && !checklists.length) {
       const empty = document.createElement("div");
       empty.className = "text-center text-muted py-4";
       empty.textContent = "Keine offenen ToDo-Tasks.";
@@ -306,6 +398,9 @@ function renderTaskList() {
 
     if (active.length) {
       renderSection(container, planned.length ? "Aktiv" : "", active);
+    }
+    if (checklists.length) {
+      renderSection(container, "Checklisten", checklists);
     }
     if (planned.length) {
       const hint = document.createElement("div");
@@ -394,6 +489,12 @@ function resetTaskModal() {
   document.getElementById("task-status-badge").textContent = "ToDo";
   document.getElementById("task-status-badge").className = "badge rounded-pill text-bg-info";
   document.getElementById("task-meta").textContent = "";
+  currentChecklistItems = [];
+  const checklistInput = document.getElementById("checklist-item-input");
+  if (checklistInput) {
+    checklistInput.value = "";
+  }
+  renderChecklistItems();
   document.getElementById("btn-delete-task").classList.add("d-none");
   document.getElementById("btn-reactivate-task").classList.add("d-none");
   document.getElementById("btn-snooze-task").disabled = false;
@@ -434,6 +535,10 @@ async function openTaskModalForEdit(task) {
   document.getElementById("task-id").value = task.id;
   document.getElementById("task-title").value = task.title;
   document.getElementById("task-description").value = task.description || "";
+  currentChecklistItems = Array.isArray(task.checklist)
+    ? task.checklist.map(item => ({ text: item.text, done: !!item.done }))
+    : [];
+  renderChecklistItems();
   document.getElementById("task-snooze-count").textContent = task.snoozeCount || 0;
   const isEditableWindow = isWithinEditableWindow(task);
   const titleInput = document.getElementById("task-title");
@@ -467,15 +572,16 @@ async function openTaskModalForEdit(task) {
   inactiveToggle.disabled = true;
 
   const badge = document.getElementById("task-status-badge");
+  const isChecklist = isChecklistTask(task);
   badge.textContent =
-    task.status === "todo" ? (isPlannedTask(task) ? "Geplant" : "ToDo") :
+    task.status === "todo" ? (isPlannedTask(task) ? "Geplant" : (isChecklist ? "Checkliste" : "ToDo")) :
     task.status === "snooze" ? "Snooze" :
     task.status === "done" ? "Done" :
     task.status === "inactive" ? "Inaktiv" :
     "Archiviert";
   badge.className =
     "badge rounded-pill " +
-    (task.status === "todo" ? (isPlannedTask(task) ? "text-bg-secondary" : "text-bg-info") :
+    (task.status === "todo" ? (isPlannedTask(task) ? "text-bg-secondary" : (isChecklist ? "text-bg-primary" : "text-bg-info")) :
      task.status === "snooze" ? "text-bg-warning" :
      task.status === "done" ? "text-bg-success" :
      task.status === "inactive" ? "text-bg-dark" :
@@ -494,6 +600,9 @@ async function openTaskModalForEdit(task) {
     metaParts.push(`bearbeitbar bis: ${editableUntil.toLocaleTimeString().slice(0, 5)}`);
   } else {
     metaParts.push("Bearbeitung nach 15 Minuten gesperrt.");
+  }
+  if (!task.dueDate) {
+    metaParts.push("Checkliste ohne Fälligkeit");
   }
   if (task.dueDate) {
     const due = new Date(task.dueDate);
@@ -518,7 +627,7 @@ async function openTaskModalForEdit(task) {
   const activateBtn = document.getElementById("btn-activate-task");
   activateBtn.classList.toggle("d-none", task.status !== "inactive");
   const snoozeBtn = document.getElementById("btn-snooze-task");
-  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done" || task.status === "inactive";
+  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done" || task.status === "inactive" || !task.dueDate;
   snoozeBtn.classList.toggle("d-none", task.status === "inactive");
   const doneBtn = document.getElementById("btn-done-task");
   doneBtn.disabled = task.status === "inactive";
@@ -591,7 +700,7 @@ async function onSaveTask(e) {
   try {
     let savedTask;
     if (!id) {
-      const payload = { title, description };
+      const payload = { title, description, checklist: currentChecklistItems };
       if (dueDateValue && !inactiveChecked) {
         payload.dueDate = dueDateValue;
       }
@@ -600,7 +709,7 @@ async function onSaveTask(e) {
       }
       savedTask = await createTask(payload);
     } else {
-      const payload = { title, description };
+      const payload = { title, description, checklist: currentChecklistItems };
       const dueDateInput = document.getElementById("task-due-date");
       if (dueDateInput && !dueDateInput.disabled) {
         payload.dueDate = dueDateValue || null;
@@ -663,7 +772,7 @@ async function onTranscribeAudio() {
     let taskId = taskIdInput.value;
 
     if (!taskId) {
-      const payload = { title, description };
+      const payload = { title, description, checklist: currentChecklistItems };
       if (dueDateValue && !inactiveChecked) {
         payload.dueDate = dueDateValue;
       }
@@ -674,7 +783,7 @@ async function onTranscribeAudio() {
       taskId = created.id || created.taskId;
       taskIdInput.value = taskId;
     } else {
-      await updateTask(taskId, { title, description });
+      await updateTask(taskId, { title, description, checklist: currentChecklistItems });
     }
 
     if (currentAudioBlob) {
@@ -692,7 +801,7 @@ async function onTranscribeAudio() {
       : `===> ${transcript} <===`;
 
     descriptionInput.value = updatedDescription;
-    await updateTask(taskId, { title: document.getElementById("task-title").value.trim(), description: updatedDescription });
+    await updateTask(taskId, { title: document.getElementById("task-title").value.trim(), description: updatedDescription, checklist: currentChecklistItems });
 
     statusLabel.textContent = "Transkription hinzugefügt.";
     await loadTasks();
@@ -719,6 +828,10 @@ async function onSnoozeTask() {
   }
   if (task && task.status === "inactive") {
     alert("Inaktive Tasks müssen zuerst aktiviert werden.");
+    return;
+  }
+  if (task && !task.dueDate) {
+    alert("Checklisten können nicht gesnoozed werden.");
     return;
   }
   if (task && isPlannedTask(task)) {

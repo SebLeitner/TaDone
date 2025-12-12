@@ -31,3 +31,15 @@ body {
 .modal-content {
   box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.8);
 }
+
+#checklist-items .list-group-item {
+  border-color: #2b3035;
+}
+
+#checklist-items .checklist-remove-btn {
+  opacity: 0.7;
+}
+
+#checklist-items .checklist-remove-btn:hover {
+  opacity: 1;
+}
