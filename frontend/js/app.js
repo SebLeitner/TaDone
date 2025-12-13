@@ -19,6 +19,7 @@ let allTasks = [];
 let currentAudioBlob = null;
 let taskModal = null;
 let currentChecklistItems = [];
+let currentTaskMode = "task"; // "task" | "checklist"
 const EDITABLE_WINDOW_MS = 15 * 60 * 1000;
 
 function isWithinEditableWindow(task) {
@@ -45,7 +46,7 @@ function isPlannedTask(task) {
 }
 
 function isChecklistTask(task) {
-  return task.status === "todo" && !task.dueDate;
+  return task.status !== "inactive" && !task.dueDate;
 }
 
 function renderChecklistItems() {
@@ -105,6 +106,66 @@ function addChecklistItem() {
   currentChecklistItems.push({ text, done: false });
   input.value = "";
   renderChecklistItems();
+}
+
+function setTaskMode(mode) {
+  currentTaskMode = mode === "checklist" ? "checklist" : "task";
+  const isChecklist = currentTaskMode === "checklist";
+
+  const taskTypeTask = document.getElementById("task-type-task");
+  const taskTypeChecklist = document.getElementById("task-type-checklist");
+  if (taskTypeTask) taskTypeTask.checked = !isChecklist;
+  if (taskTypeChecklist) taskTypeChecklist.checked = isChecklist;
+
+  const audioSection = document.getElementById("audio-section");
+  if (audioSection) {
+    audioSection.classList.toggle("d-none", isChecklist);
+  }
+
+  const snoozeBtn = document.getElementById("btn-snooze-task");
+  if (snoozeBtn) {
+    snoozeBtn.classList.toggle("d-none", isChecklist);
+  }
+
+  const inactiveToggle = document.getElementById("task-inactive-toggle");
+  if (inactiveToggle) {
+    inactiveToggle.disabled = isChecklist;
+    if (isChecklist) {
+      inactiveToggle.checked = false;
+    }
+  }
+
+  const dueDateInput = document.getElementById("task-due-date");
+  if (dueDateInput) {
+    if (isChecklist) {
+      dueDateInput.value = "";
+      dueDateInput.disabled = true;
+    } else if (!inactiveToggle || !inactiveToggle.checked) {
+      dueDateInput.disabled = false;
+    }
+  }
+
+  const recordBtn = document.getElementById("btn-audio-record");
+  const stopBtn = document.getElementById("btn-audio-stop");
+  const playBtn = document.getElementById("btn-audio-play");
+  const audioPlayer = document.getElementById("audio-player");
+  const audioStatus = document.getElementById("audio-status");
+
+  if (isChecklist) {
+    currentAudioBlob = null;
+    if (recordBtn) recordBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = true;
+    if (playBtn) playBtn.disabled = true;
+    if (audioPlayer) {
+      audioPlayer.src = "";
+      audioPlayer.style.display = "none";
+    }
+    if (audioStatus) audioStatus.textContent = "Keine Aufnahme vorhanden.";
+  } else {
+    if (recordBtn) recordBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = true;
+    if (playBtn) playBtn.disabled = !audioPlayer || !audioPlayer.src;
+  }
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -195,6 +256,10 @@ function initUI() {
   document.getElementById("btn-activate-task").addEventListener("click", onActivateTask);
   document.getElementById("btn-delete-task").addEventListener("click", onDeleteTask);
   document.getElementById("btn-audio-transcribe").addEventListener("click", onTranscribeAudio);
+
+  document.querySelectorAll("input[name='task-type']").forEach(input => {
+    input.addEventListener("change", () => setTaskMode(input.value));
+  });
 
   // Audio
   initAudioControls({
@@ -479,6 +544,7 @@ function resetTaskModal() {
   document.getElementById("task-id").value = "";
   document.getElementById("task-title").value = "";
   document.getElementById("task-description").value = "";
+  setTaskMode("task");
   document.getElementById("task-title").disabled = false;
   document.getElementById("task-description").disabled = false;
   document.getElementById("task-due-date").value = "";
@@ -539,6 +605,8 @@ async function openTaskModalForEdit(task) {
     ? task.checklist.map(item => ({ text: item.text, done: !!item.done }))
     : [];
   renderChecklistItems();
+  const isChecklist = isChecklistTask(task);
+  setTaskMode(isChecklist ? "checklist" : "task");
   document.getElementById("task-snooze-count").textContent = task.snoozeCount || 0;
   const isEditableWindow = isWithinEditableWindow(task);
   const titleInput = document.getElementById("task-title");
@@ -553,18 +621,20 @@ async function openTaskModalForEdit(task) {
   titleInput.disabled = !isEditableWindow;
   descriptionInput.disabled = !isEditableWindow;
   const dueDateInput = document.getElementById("task-due-date");
-  if (task.dueDate) {
-    dueDateInput.value = formatDateForInput(task.dueDate);
-  }
-  if (task.status === "inactive") {
-    if (!task.dueDate) {
-      dueDateInput.value = formatDateForInput(startOfToday());
+  if (!isChecklist) {
+    if (task.dueDate) {
+      dueDateInput.value = formatDateForInput(task.dueDate);
     }
-    dueDateInput.disabled = false;
-  } else if (isEditableWindow) {
-    dueDateInput.disabled = false;
-  } else {
-    dueDateInput.disabled = true;
+    if (task.status === "inactive") {
+      if (!task.dueDate) {
+        dueDateInput.value = formatDateForInput(startOfToday());
+      }
+      dueDateInput.disabled = false;
+    } else if (isEditableWindow) {
+      dueDateInput.disabled = false;
+    } else {
+      dueDateInput.disabled = true;
+    }
   }
 
   const inactiveToggle = document.getElementById("task-inactive-toggle");
@@ -572,7 +642,6 @@ async function openTaskModalForEdit(task) {
   inactiveToggle.disabled = true;
 
   const badge = document.getElementById("task-status-badge");
-  const isChecklist = isChecklistTask(task);
   badge.textContent =
     task.status === "todo" ? (isPlannedTask(task) ? "Geplant" : (isChecklist ? "Checkliste" : "ToDo")) :
     task.status === "snooze" ? "Snooze" :
@@ -627,8 +696,8 @@ async function openTaskModalForEdit(task) {
   const activateBtn = document.getElementById("btn-activate-task");
   activateBtn.classList.toggle("d-none", task.status !== "inactive");
   const snoozeBtn = document.getElementById("btn-snooze-task");
-  snoozeBtn.disabled = isPlannedTask(task) || task.status === "done" || task.status === "inactive" || !task.dueDate;
-  snoozeBtn.classList.toggle("d-none", task.status === "inactive");
+  snoozeBtn.disabled = isChecklist || isPlannedTask(task) || task.status === "done" || task.status === "inactive" || !task.dueDate;
+  snoozeBtn.classList.toggle("d-none", task.status === "inactive" || isChecklist);
   const doneBtn = document.getElementById("btn-done-task");
   doneBtn.disabled = task.status === "inactive";
   doneBtn.classList.toggle("d-none", task.status === "inactive");
@@ -645,7 +714,7 @@ async function openTaskModalForEdit(task) {
   }
 
   // Bestehendes Audio anzeigen
-  if (task.audioKey) {
+  if (task.audioKey && !isChecklist) {
     const audioPlayer = document.getElementById("audio-player");
     const statusLabel = document.getElementById("audio-status");
     const playBtn = document.getElementById("btn-audio-play");
@@ -678,6 +747,7 @@ async function onSaveTask(e) {
   const dueDateValue = document.getElementById("task-due-date").value;
   const inactiveChecked = document.getElementById("task-inactive-toggle").checked;
   const existingTask = id ? allTasks.find(t => t.id === id) : null;
+  const isChecklist = currentTaskMode === "checklist";
 
   // Safety net: reflect the inactive choice directly in the modal badge so the
   // user can immediately see which status will be sent to the backend.
@@ -701,27 +771,27 @@ async function onSaveTask(e) {
     let savedTask;
     if (!id) {
       const payload = { title, description, checklist: currentChecklistItems };
-      if (dueDateValue && !inactiveChecked) {
+      if (!isChecklist && dueDateValue && !inactiveChecked) {
         payload.dueDate = dueDateValue;
       }
-      if (inactiveChecked) {
+      if (!isChecklist && inactiveChecked) {
         payload.status = "INACTIVE";
       }
       savedTask = await createTask(payload);
     } else {
       const payload = { title, description, checklist: currentChecklistItems };
       const dueDateInput = document.getElementById("task-due-date");
-      if (dueDateInput && !dueDateInput.disabled) {
+      if (!isChecklist && dueDateInput && !dueDateInput.disabled) {
         payload.dueDate = dueDateValue || null;
       }
-      if (inactiveChecked) {
+      if (!isChecklist && inactiveChecked) {
         payload.status = "INACTIVE";
       }
       savedTask = await updateTask(id, payload);
     }
 
     // Audio optional hochladen
-    if (currentAudioBlob && savedTask && (savedTask.id || savedTask.taskId)) {
+    if (!isChecklist && currentAudioBlob && savedTask && (savedTask.id || savedTask.taskId)) {
       const tid = savedTask.id || savedTask.taskId;
       try {
         await uploadTaskAudio(tid, currentAudioBlob);
@@ -748,6 +818,12 @@ async function onTranscribeAudio() {
   const dueDateValue = document.getElementById("task-due-date").value;
   const inactiveChecked = document.getElementById("task-inactive-toggle").checked;
   const existingTask = taskIdInput.value ? allTasks.find(t => t.id === taskIdInput.value) : null;
+  const isChecklist = currentTaskMode === "checklist";
+
+  if (isChecklist) {
+    alert("Checklisten unterstützen keine Sprachaufnahmen.");
+    return;
+  }
 
   const hasAudio = currentAudioBlob || audioPlayer.src;
   if (!hasAudio) {
