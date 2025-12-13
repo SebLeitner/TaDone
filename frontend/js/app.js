@@ -544,6 +544,11 @@ function resetTaskModal() {
   document.getElementById("task-id").value = "";
   document.getElementById("task-title").value = "";
   document.getElementById("task-description").value = "";
+  const saveBtn = document.querySelector('#taskModal button[type="submit"][form="task-form"]');
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.title = "";
+  }
   setTaskMode("task");
   document.getElementById("task-title").disabled = false;
   document.getElementById("task-description").disabled = false;
