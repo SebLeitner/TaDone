@@ -721,10 +721,8 @@ async function openTaskModalForEdit(task) {
   reactivationBtn.classList.toggle("d-none", !(task.status === "snooze" || task.status === "done"));
   const activateBtn = document.getElementById("btn-activate-task");
   activateBtn.classList.toggle("d-none", task.status !== "inactive");
-  const snoozeBtn = document.getElementById("btn-snooze-task");
   snoozeBtn.disabled = isChecklist || isPlannedTask(task) || task.status === "done" || task.status === "inactive" || !task.dueDate;
   snoozeBtn.classList.toggle("d-none", task.status === "inactive" || isChecklist);
-  const doneBtn = document.getElementById("btn-done-task");
   doneBtn.disabled = task.status === "inactive";
   doneBtn.classList.toggle("d-none", task.status === "inactive");
 
