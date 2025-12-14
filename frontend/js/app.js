@@ -20,6 +20,7 @@ let currentAudioBlob = null;
 let taskModal = null;
 let currentChecklistItems = [];
 let currentTaskMode = "task"; // "task" | "checklist"
+let isCreatingNewTask = false;
 const EDITABLE_WINDOW_MS = 15 * 60 * 1000;
 
 function isWithinEditableWindow(task) {
@@ -122,9 +123,19 @@ function setTaskMode(mode) {
     audioSection.classList.toggle("d-none", isChecklist);
   }
 
+  const checklistSection = document.getElementById("checklist-section");
+  if (checklistSection) {
+    checklistSection.classList.toggle("d-none", !isChecklist);
+  }
+
   const snoozeBtn = document.getElementById("btn-snooze-task");
   if (snoozeBtn) {
-    snoozeBtn.classList.toggle("d-none", isChecklist);
+    snoozeBtn.classList.toggle("d-none", isChecklist || isCreatingNewTask);
+  }
+
+  const doneBtn = document.getElementById("btn-done-task");
+  if (doneBtn && isCreatingNewTask) {
+    doneBtn.classList.add("d-none");
   }
 
   const inactiveToggle = document.getElementById("task-inactive-toggle");
@@ -595,14 +606,24 @@ function ensureTitleWithTimestamp() {
 }
 
 function openTaskModalForNew() {
+  isCreatingNewTask = true;
   resetTaskModal();
   document.getElementById("taskModalLabel").textContent = "Neuer Task";
+  const snoozeBtn = document.getElementById("btn-snooze-task");
+  const doneBtn = document.getElementById("btn-done-task");
+  if (snoozeBtn) snoozeBtn.classList.add("d-none");
+  if (doneBtn) doneBtn.classList.add("d-none");
   taskModal.show();
 }
 
 async function openTaskModalForEdit(task) {
+  isCreatingNewTask = false;
   resetTaskModal();
   document.getElementById("taskModalLabel").textContent = "Task bearbeiten";
+  const snoozeBtn = document.getElementById("btn-snooze-task");
+  const doneBtn = document.getElementById("btn-done-task");
+  if (snoozeBtn) snoozeBtn.classList.remove("d-none");
+  if (doneBtn) doneBtn.classList.remove("d-none");
   document.getElementById("task-id").value = task.id;
   document.getElementById("task-title").value = task.title;
   document.getElementById("task-description").value = task.description || "";
