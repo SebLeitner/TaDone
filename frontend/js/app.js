@@ -47,6 +47,8 @@ function isPlannedTask(task) {
 }
 
 function isChecklistTask(task) {
+  if (!task) return false;
+  if (task.type) return task.type === "checklist";
   return Array.isArray(task.checklist) && task.checklist.length > 0;
 }
 
@@ -309,6 +311,9 @@ function normalizeTasks(list) {
     title: t.title || "",
     description: t.description || "",
     status: (t.status || "TODO").toLowerCase(),
+    type: (t.type
+      ? t.type.toLowerCase()
+      : (Array.isArray(t.checklist) && t.checklist.length ? "checklist" : "task")),
     snoozeCount: t.snoozeCount || 0,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
@@ -794,7 +799,7 @@ async function onSaveTask(e) {
   try {
     let savedTask;
     if (!id) {
-      const payload = { title, description };
+      const payload = { title, description, type: isChecklist ? "CHECKLIST" : "TASK" };
       if (isChecklist) {
         payload.checklist = currentChecklistItems;
       }
@@ -806,7 +811,7 @@ async function onSaveTask(e) {
       }
       savedTask = await createTask(payload);
     } else {
-      const payload = { title, description };
+      const payload = { title, description, type: isChecklist ? "CHECKLIST" : "TASK" };
       if (isChecklist) {
         payload.checklist = currentChecklistItems;
       }
