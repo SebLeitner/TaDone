@@ -794,7 +794,10 @@ async function onSaveTask(e) {
   try {
     let savedTask;
     if (!id) {
-      const payload = { title, description, checklist: currentChecklistItems };
+      const payload = { title, description };
+      if (isChecklist) {
+        payload.checklist = currentChecklistItems;
+      }
       if (!isChecklist && dueDateValue && !inactiveChecked) {
         payload.dueDate = dueDateValue;
       }
@@ -803,7 +806,10 @@ async function onSaveTask(e) {
       }
       savedTask = await createTask(payload);
     } else {
-      const payload = { title, description, checklist: currentChecklistItems };
+      const payload = { title, description };
+      if (isChecklist) {
+        payload.checklist = currentChecklistItems;
+      }
       const dueDateInput = document.getElementById("task-due-date");
       if (!isChecklist && dueDateInput && !dueDateInput.disabled) {
         payload.dueDate = dueDateValue || null;
@@ -872,7 +878,7 @@ async function onTranscribeAudio() {
     let taskId = taskIdInput.value;
 
     if (!taskId) {
-      const payload = { title, description, checklist: currentChecklistItems };
+      const payload = { title, description };
       if (dueDateValue && !inactiveChecked) {
         payload.dueDate = dueDateValue;
       }
@@ -883,7 +889,7 @@ async function onTranscribeAudio() {
       taskId = created.id || created.taskId;
       taskIdInput.value = taskId;
     } else {
-      await updateTask(taskId, { title, description, checklist: currentChecklistItems });
+      await updateTask(taskId, { title, description });
     }
 
     if (currentAudioBlob) {
@@ -901,7 +907,10 @@ async function onTranscribeAudio() {
       : `===> ${transcript} <===`;
 
     descriptionInput.value = updatedDescription;
-    await updateTask(taskId, { title: document.getElementById("task-title").value.trim(), description: updatedDescription, checklist: currentChecklistItems });
+    await updateTask(taskId, {
+      title: document.getElementById("task-title").value.trim(),
+      description: updatedDescription
+    });
 
     statusLabel.textContent = "Transkription hinzugefügt.";
     await loadTasks();
