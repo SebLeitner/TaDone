@@ -47,7 +47,7 @@ function isPlannedTask(task) {
 }
 
 function isChecklistTask(task) {
-  return task.status !== "inactive" && !task.dueDate;
+  return Array.isArray(task.checklist) && task.checklist.length > 0;
 }
 
 function renderChecklistItems() {
@@ -330,7 +330,7 @@ function createTaskListItem(task) {
 
   const left = document.createElement("div");
   left.className = "me-3 flex-grow-1";
-  const isChecklist = !task.dueDate;
+  const isChecklist = isChecklistTask(task);
 
   const title = document.createElement("div");
   title.className = "fw-semibold";
@@ -461,7 +461,7 @@ function renderTaskList() {
       .filter(isPlannedTask)
       .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
     const active = todos
-      .filter(t => !isPlannedTask(t) && t.dueDate)
+      .filter(t => (!isPlannedTask(t) && t.dueDate) || (!t.dueDate && !isChecklistTask(t)))
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
     if (!planned.length && !active.length && !checklists.length) {
@@ -696,7 +696,7 @@ async function openTaskModalForEdit(task) {
   } else {
     metaParts.push("Bearbeitung nach 15 Minuten gesperrt.");
   }
-  if (!task.dueDate) {
+  if (isChecklist) {
     metaParts.push("Checkliste ohne Fälligkeit");
   }
   if (task.dueDate) {
@@ -939,7 +939,7 @@ async function onSnoozeTask() {
     alert("Inaktive Tasks müssen zuerst aktiviert werden.");
     return;
   }
-  if (task && !task.dueDate) {
+  if (task && isChecklistTask(task)) {
     alert("Checklisten können nicht gesnoozed werden.");
     return;
   }
