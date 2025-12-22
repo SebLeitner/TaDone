@@ -124,7 +124,6 @@ async function autoSnoozeOverdue(userId, tasks) {
       const lastTouch = t.updatedAt || t.createdAt;
       if (lastTouch && lastTouch < todayStart) {
         const now = new Date().toISOString();
-        const until = nextMidnight();
 
         updates.push(
           dynamo.send(
@@ -132,22 +131,17 @@ async function autoSnoozeOverdue(userId, tasks) {
               TableName: TASKS_TABLE,
               Key: { userId, taskId: t.taskId },
               UpdateExpression:
-                "SET #s = :s, snoozeCount = if_not_exists(snoozeCount, :zero) + :one, snoozedUntil = :until, updatedAt = :u",
-              ExpressionAttributeNames: { "#s": "status" },
+                "SET snoozeCount = if_not_exists(snoozeCount, :zero) + :one, updatedAt = :u",
               ExpressionAttributeValues: {
-                ":s": "SNOOZE",
                 ":one": 1,
                 ":zero": 0,
-                ":until": until,
                 ":u": now
               }
             })
           )
         );
 
-        t.status = "SNOOZE";
         t.snoozeCount = (t.snoozeCount || 0) + 1;
-        t.snoozedUntil = until;
         t.updatedAt = now;
       }
     }
